@@ -4,7 +4,7 @@
  * Мир: миллиметры; X — вдоль стены, Y — высота от пола (вверх).
  * Экран: SVG-координаты, y направлен вниз; низ стены — на y = height.
  *
- * Инструменты: выбор (перетаскивание, рамка), кабельный канал (ломаная),
+ * Инструменты: выбор (перетаскивание, рамка), короб (ломаная),
  * панорама, измерение. Опуски к каналам считаются автоматически.
  */
 import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS } from './catalog.js';
@@ -806,7 +806,7 @@ export class WallEditor {
     this.store.select(items, band.additive);
   }
 
-  /* ================= кабельные каналы ================= */
+  /* ================= короба ================= */
   _orthoPoint(floor) {
     let [x, y] = floor;
     x = clamp(x, 0, this.wall.width);
@@ -846,7 +846,7 @@ export class WallEditor {
       this.render();
       return;
     }
-    this.store.addChannel(draft.points, { kind: this.store.settings.channelKind || 'кабель-канал', wallId: draft.wallId });
+    this.store.addChannel(draft.points, { kind: this.store.settings.channelKind || 'dkc', wallId: draft.wallId });
     this.store.tool = 'select';
     this.store.emit('tool');
     this._hint();
@@ -926,18 +926,48 @@ export class WallEditor {
     return out;
   }
 
+  /** Поперечные стыки стандартных двухметровых секций кабель-канала. */
+  _channelJoints(ch) {
+    const width = Math.max(ch.width || 40, 6);
+    const half = Math.max(width / 2 - 3, 2);
+    let out = '';
+    for (let i = 1; i < ch.points.length; i++) {
+      const a = ch.points[i - 1];
+      const b = ch.points[i];
+      const ax = a[0];
+      const ay = this.toScreenY(a[1]);
+      const dx = b[0] - ax;
+      const dy = this.toScreenY(b[1]) - ay;
+      const length = Math.hypot(dx, dy);
+      for (let at = 2000; at <= length - 24; at += 2000) {
+        const x = ax + (dx * at) / length;
+        const y = ay + (dy * at) / length;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          out += `<line class="channel-joint" x1="${x}" y1="${y - half}" x2="${x}" y2="${y + half}"/>`;
+        } else {
+          out += `<line class="channel-joint" x1="${x - half}" y1="${y}" x2="${x + half}" y2="${y}"/>`;
+        }
+      }
+    }
+    return out;
+  }
+
   _channels() {
     let out = '';
     for (const ch of this.store.wallChannels) {
       const def = CHANNEL_KINDS.find((k) => k.id === ch.kind) || CHANNEL_KINDS[0];
       const d = pathD(ch.points, (y) => this.toScreenY(y));
       const sw = Math.max(ch.width, 6);
-      const sel = this.store.isSelected('channel', ch.id) ? ' sel' : '';
+      const selected = this.store.isSelected('channel', ch.id);
+      const sel = selected ? ' sel' : '';
       const color = ch.color || def.color;
       out += `<g class="channel${sel}" data-type="channel" data-id="${ch.id}">
-        <path class="channel-hit" d="${d}" stroke-width="${Math.max(sw * 2.6, 140)}"/>
+        ${selected ? `<path class="channel-selection" d="${d}" stroke-width="${sw + 18}"/>` : ''}
+        <path class="channel-rail" d="${d}" stroke-width="${sw + 8}"/>
         <path class="channel-body" d="${d}" stroke-width="${sw}" stroke="${color}"/>
-        <path class="channel-inner" d="${d}" stroke-width="${Math.max(sw * 0.26, 2)}"/>
+        <path class="channel-inner channel-lid" d="${d}" stroke-width="${Math.max(sw - 8, 2)}"/>
+        ${this._channelJoints(ch)}
+        <path class="channel-hit" d="${d}" stroke-width="${Math.max(sw * 2.6, 140)}"/>
         ${ch.points.slice(1).map((pt, i) => {
           const a = ch.points[i];
           return `<line class="channel-seg-hit" data-type="channel-seg" data-id="${ch.id}" data-index="${i}" x1="${a[0]}" y1="${this.toScreenY(a[1])}" x2="${pt[0]}" y2="${this.toScreenY(pt[1])}" stroke-width="${Math.max(sw + 90, 220)}"/>`;
@@ -1306,7 +1336,7 @@ export class WallEditor {
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
-    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label')) g.remove();
+    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label')) g.remove();
     for (const g of walker.querySelectorAll('.sel')) g.classList.remove('sel');
     const meta = this.store.project.meta || {};
     const title = `${meta.name || 'BolidGrid'} — ${wall.name}`;

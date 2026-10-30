@@ -11,7 +11,7 @@
     "cad",
     "svg",
     "editor",
-    "cable-route"
+    "mounting-plan"
   ],
   "license": "MIT",
   "engines": {

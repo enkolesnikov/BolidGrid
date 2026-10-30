@@ -324,11 +324,11 @@ export function modelsByKind() {
   return KIND_ORDER.filter((k) => groups.has(k)).map((k) => ({ kind: k, label: KIND_LABELS[k], models: groups.get(k) }));
 }
 
-/** Типы кабельных каналов / трасс. */
+/** Типы коробов и монтажных трасс. */
 export const CHANNEL_KINDS = [
-  { id: 'кабель-канал', label: 'Короб DKC 100×40', width: 100, color: '#94a3b8' },
-  { id: 'короб-60', label: 'Короб DKC 60×40', width: 60, color: '#9aa9bb' },
-  { id: 'короб-40', label: 'Короб DKC 40×25', width: 40, color: '#a3b2c4' },
+  { id: 'dkc', label: 'Кабель-канал DKC 100×60', width: 100, color: '#f8fafc' },
+  { id: 'короб-60', label: 'Кабель-канал DKC 60×40', width: 60, color: '#f8fafc' },
+  { id: 'короб-40', label: 'Кабель-канал DKC 40×25', width: 40, color: '#f8fafc' },
   { id: 'лоток', label: 'Лоток металлический 100', width: 100, color: '#7c8fa8' },
   { id: 'гофра', label: 'Гофротруба Ø20', width: 20, color: '#a3b2c4' },
   { id: 'труба', label: 'Труба стальная Ø25', width: 25, color: '#8b9bb0' },
@@ -338,4 +338,4 @@ export const CHANNEL_KINDS = [
 export const CHANNEL_KIND_IDS = CHANNEL_KINDS.map((k) => k.id);
 
 /** Цвета короба (быстрый выбор в свойствах трассы). */
-export const CHANNEL_COLORS = ['#94a3b8', '#64748b', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#475569'];
+export const CHANNEL_COLORS = ['#f8fafc', '#cbd5e1', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#475569'];

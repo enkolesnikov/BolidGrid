@@ -200,12 +200,6 @@ const pressKeys = async (page, keys, betweenMs = 22) => {
   }
 };
 
-const normCable = (v) =>
-  String(v || '')
-    .toLowerCase()
-    .replace(/[\s«»"'()]/g, '')
-    .replace(/[хx*]/g, 'x');
-
 const parseRuNum = (s) => {
   const t = String(s ?? '')
     .replace(/[\s\u00a0]/g, '')
@@ -241,7 +235,7 @@ const normProject = (p) => ({
       kind: c.kind,
       width: c.width,
       points: c.points,
-      cableModelId: c.cableModelId,
+      color: c.color,
       label: c.label,
     }))
     .sort((a, b) => (a.id < b.id ? -1 : 1)),
@@ -301,20 +295,14 @@ async function main() {
     const spec = JSON.parse(await readFile(new URL('../data/spec.json', import.meta.url), 'utf8'));
     const allPos = [
       ...(spec.equipment || []),
-      ...(spec.cables || []),
       ...(spec.materials || []),
       ...(spec.spares || []),
     ].map((r) => +r.pos);
-    check('spec.json: ровно 30 позиций', allPos.length === 30, `count=${allPos.length}`);
-    const sorted = [...allPos].sort((a, b) => a - b);
-    check(
-      'spec.json: позиции непрерывны 1..30 без пропусков и дублей',
-      sorted.every((v, i) => v === i + 1),
-      `min=${sorted[0]}, max=${sorted[sorted.length - 1]}, unique=${new Set(allPos).size}`
-    );
+    check('spec.json: 27 позиций после удаления кабельной части', allPos.length === 27, `count=${allPos.length}`);
+    check('spec.json: позиции уникальны', new Set(allPos).size === allPos.length, `unique=${new Set(allPos).size}`);
     check('spec.json: 12 позиций оборудования', spec.equipment.length === 12, `n=${spec.equipment.length}`);
-    check('spec.json: 2 позиции кабеля', spec.cables.length === 2, `n=${spec.cables.length}`);
-    check('spec.json: 11 позиций материалов и 5 запасных', spec.materials.length === 11 && spec.spares.length === 5, `materials=${spec.materials.length}, spares=${spec.spares.length}`);
+    check('spec.json: кабельные данные отсутствуют', !('cables' in spec) && !/кабел|КПСнг/i.test(JSON.stringify(spec)), '');
+    check('spec.json: 10 позиций материалов и 5 запасных', spec.materials.length === 10 && spec.spares.length === 5, `materials=${spec.materials.length}, spares=${spec.spares.length}`);
     const dipRow = spec.equipment.find((r) => +r.pos === 2);
     check('spec.json: ДИП-34А-04, поз.2, план 32 шт.', dipRow && +dipRow.qty === 32 && /ДИП-34А-04/.test(dipRow.model), JSON.stringify(dipRow?.qty));
 
@@ -591,8 +579,8 @@ async function main() {
     }, targetDev.id);
     check('B: undo после перетаскивания за края восстанавливает координаты', afterUndo.x === targetDev.x && afterUndo.y === targetDev.y);
 
-    /* ---------- B3. Кабельный канал: 4 точки, вершина, удаление ---------- */
-    section('B3. Кабельный канал: 4 точки, перетаскивание вершины, удаление');
+    /* ---------- B3. Короб: 4 точки, вершина, удаление ---------- */
+    section('B3. Короб: 4 точки, перетаскивание вершины, удаление');
     const channelsBefore = (await getState(page)).channels;
     await page.locator('#stage-toolbar [data-tool="channel"]').click();
     await sleep(120);
@@ -1022,8 +1010,8 @@ async function main() {
     await sleep(300);
     await page.screenshot({ path: OUT + 'qa-04-board.png' });
 
-    /* ---------- B10. Спецификация и кабельный журнал ---------- */
-    section('B10. Спецификация: факт/план, кабель в метрах, журнал');
+    /* ---------- B10. Спецификация и ведомость коробов ---------- */
+    section('B10. Спецификация: факт/план и ведомость коробов');
     await page.locator('#wall-tabs .wall-tab').nth(0).click();
     await sleep(300);
     await page.locator('#btn-zoom-fit').click();
@@ -1041,9 +1029,8 @@ async function main() {
     await sleep(300);
     const specTables = await readSpecTables(page);
     const equipTable = specTables.find((t) => /Оборудование/.test(t.section) && t.rows.length >= 4);
-    const cableTable = specTables.find((t) => /Кабельная продукция/.test(t.section) && t.rows.some((r) => /КПСнг/.test(r.join(' '))));
     check('B: таблица оборудования содержит 4 доступные позиции', !!equipTable && equipTable.rows.length === 4, equipTable ? `rows=${equipTable.rows.length}` : 'no table');
-    check('B: таблица кабеля содержит 2 позиции', !!cableTable && cableTable.rows.length === 2, cableTable ? `rows=${cableTable.rows.length}` : 'no table');
+    check('B: кабельная продукция отсутствует в спецификации', !specTables.some((t) => /Кабельная продукция/i.test(t.section) || /КПСнг/.test(t.rows.map((r) => r.join(' ')).join(' '))), '');
     const row4 = equipTable?.rows.find((r) => r[0] === '4');
     const plan4 = row4 ? parseRuNum(row4[5]) : null;
     const fact4 = row4 ? parseRuNum(row4[6]) : null;
@@ -1069,26 +1056,11 @@ async function main() {
     const journalApi = await page.evaluate(() => {
       const p = window.BolidGrid.panels;
       const j = p.buildJournalRows();
-      return { totals: j.totals, totalsByCable: j.totalsByCable, rows: j.rows.map((r) => ({ id: r.id, length: r.length, width: r.width, cable: r.cable })) };
+      return { totals: j.totals, rows: j.rows.map((r) => ({ id: r.id, length: r.length, width: r.width })) };
     });
-    const cableApi = new Map(journalApi.totalsByCable.map((t) => [normCable(t.cable), t.length]));
-    let cableOk = true;
-    const cableDetails = [];
-    for (const r of cableTable?.rows || []) {
-      const model = r[2];
-      const plan = parseRuNum(r[5]);
-      const fact = parseRuNum(r[6]);
-      const diff = parseRuNum(r[7]);
-      const expected = (cableApi.get(normCable(model)) || 0) / 1000;
-      const ok = fact != null && expected != null && Math.abs(fact - expected) < 0.02 && diff != null && Math.abs(diff - (fact - plan)) < 0.02 && fact < 1000;
-      if (!ok) cableOk = false;
-      cableDetails.push({ model, plan, fact, diff, expected });
-    }
-    check('B: «Факт» кабеля в МЕТРАХ и равен итогу кабельного журнала по марке (BUG-1 fix)', cableOk && cableDetails.length === 2, JSON.stringify(cableDetails));
-    check('B: план кабеля 280 / 160 м по спецификации', cableDetails.some((c) => c.plan === 280) && cableDetails.some((c) => c.plan === 160), JSON.stringify(cableDetails.map((c) => c.plan)));
     await page.screenshot({ path: OUT + 'qa-05-spec.png' });
 
-    // кабельный журнал в DOM
+    // ведомость коробов в DOM
     await page.locator('#tabs button[data-tab="journal"]').click();
     await page.waitForSelector('#tab-journal table', { timeout: 5000 });
     await sleep(300);
@@ -1096,28 +1068,24 @@ async function main() {
       const tables = [...document.querySelectorAll('#tab-journal table')];
       const first = tables[0];
       const rows = [...first.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()));
-      const tfoot = [...first.querySelectorAll('tfoot tr td')].map((td) => td.textContent.trim());      const cables = tables[1] ? [...tables[1].querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.trim())) : [];
-      return { rowCount: rows.length, rows, tfoot, cables };
+      const tfoot = [...first.querySelectorAll('tfoot tr td')].map((td) => td.textContent.trim());
+      return { rowCount: rows.length, rows, tfoot, tableCount: tables.length, text: document.querySelector('#tab-journal').innerText };
     });
-    check('B: строк кабельного журнала = числу каналов', journalDom.rowCount === journalApi.rows.length && journalDom.rowCount === (await getState(page)).channels, JSON.stringify({ dom: journalDom.rowCount, api: journalApi.rows.length }));
+    check('B: строк ведомости коробов = числу трасс', journalDom.rowCount === journalApi.rows.length && journalDom.rowCount === (await getState(page)).channels, JSON.stringify({ dom: journalDom.rowCount, api: journalApi.rows.length }));
     const journalRowsOk = journalApi.rows.every((r, i) => {
       const cells = journalDom.rows[i];
       if (!cells) return false;
-      const trace = parseRuNum(cells[3]);
+      const trace = parseRuNum(cells[2]);
       return Math.abs(trace - r.length / 1000) < 0.006;
     });
     check('B: длины трасс в ведомости короба совпадают с расчётом (м)', journalRowsOk);
     const footerOk = journalDom.tfoot.length >= 1 &&
       Math.abs(parseRuNum(journalDom.tfoot[journalDom.tfoot.length - 1]) - journalApi.totals.length / 1000) < 0.006;
     check('B: итоговая строка ведомости короба корректна', footerOk, JSON.stringify(journalDom.tfoot));
-    const cableSectionOk = journalDom.cables.length === journalApi.totalsByCable.length && journalApi.totalsByCable.every((t) => {
-      const row = journalDom.cables.find((c) => normCable(c[0]) === normCable(t.cable));
-      return row && Math.abs(parseRuNum(row[1]) - t.length / 1000) < 0.006;
-    });
-    check('B: итоги по маркам кабеля в журнале корректны', cableSectionOk, JSON.stringify(journalDom.cables));
+    check('B: ведомость содержит только короба, без итогов по маркам', journalDom.tableCount === 1 && !/КПСнг|маркам кабеля|Кабельная продукция/i.test(journalDom.text), '');
     await page.screenshot({ path: OUT + 'qa-06-journal.png' });
 
-    // CSV-экспорт спецификации должен содержать метры, а не миллиметры
+    // CSV-экспорт содержит оборудование и не возвращает удалённую кабельную часть
     const [csvDownload] = await Promise.all([
       page.waitForEvent('download', { timeout: 10000 }),
       page.locator('#tabs button[data-tab="spec"]').click().then(() => page.locator('#tab-spec [data-spec-act="csv"]').click()),
@@ -1125,9 +1093,7 @@ async function main() {
     const csvPath = OUT + 'qa-spec.csv';
     await csvDownload.saveAs(csvPath);
     const csvText = await readFile(csvPath, 'utf8');
-    const csvCableLine = csvText.split(/\r?\n/).find((l) => /КПСнг\(А\)-FRHF 1x2x0,5/.test(l) && /^13;/.test(l));
-    const csvCells = csvCableLine ? csvCableLine.split(';') : [];
-    check('B: CSV спецификации содержит факт кабеля в метрах', csvCells.length > 6 && parseRuNum(csvCells[6]) > 0 && parseRuNum(csvCells[6]) < 1000, csvCableLine?.slice(0, 200));
+    check('B: CSV спецификации содержит оборудование без кабельных разделов', /Сириус/.test(csvText) && !/КПСнг|Кабельная продукция/i.test(csvText), `bytes=${csvText.length}`);
 
     /* ---------- B11. Автосохранение и перезагрузка ---------- */
     section('B11. Автосохранение localStorage и восстановление после reload');
@@ -1364,16 +1330,17 @@ async function main() {
       project: {
         walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
         devices: [],
-        channels: [{ id: 'c1', wallId: 'w1', kind: 'ракета', width: -10, color: 'red', points: [[0, 0], [10, 10]] }],
+        channels: [{ id: 'c1', wallId: 'w1', kind: 'ракета', width: -10, color: 'red', cableModelId: 'Устаревшая марка', points: [[0, 0], [10, 10]] }],
       },
     };
     await page.setInputFiles('#file-input', { name: 'dirty.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(dirtyPayload)) });
     await sleep(800);
     const dirty = await page.evaluate(() => {
       const s = window.BolidGrid.store;
-      return { channelKind: s.project.channels[0].kind, channelWidth: s.project.channels[0].width, channelColor: s.project.channels[0].color };
+      return { channelKind: s.project.channels[0].kind, channelWidth: s.project.channels[0].width, channelColor: s.project.channels[0].color, hasCableField: 'cableModelId' in s.project.channels[0] };
     });
-    check('B: импорт — неизвестный тип канала и «чужой» цвет нормализуются', dirty.channelKind === 'кабель-канал' && dirty.channelWidth >= 5 && dirty.channelColor === '', JSON.stringify(dirty));
+    check('B: импорт — неизвестный тип канала и «чужой» цвет нормализуются', dirty.channelKind === 'dkc' && dirty.channelWidth >= 5 && dirty.channelColor === '', JSON.stringify(dirty));
+    check('B: импорт удаляет устаревшее кабельное поле', !dirty.hasCableField, JSON.stringify(dirty));
 
     /* ---------- B14. Нумерация после удаления первой стены (BUG-4 fix) ---------- */
     section('B14. Нумерация обозначений после удаления первой стены');

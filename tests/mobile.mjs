@@ -323,27 +323,19 @@ async function main() {
         rightVisible: document.getElementById('right').getBoundingClientRect().top < innerHeight * 0.7,
       }));
       check(`${vp.label}: шторка «Спец» показывает таблицы`, spec.tables >= 2 && /Сириус/.test(spec.text) && !/ДИП-34А-04/.test(spec.text), `tables=${spec.tables}`);
-      const cableFact = await page.evaluate(() => {
-        const table = [...document.querySelectorAll('#tab-spec table')].find((t) => /КПСнг/.test(t.textContent));
-        const row = table && [...table.querySelectorAll('tbody tr')].find((tr) => /КПСнг/.test(tr.textContent));
-        if (!row) return null;
-        const cells = [...row.querySelectorAll('td')].map((td) => td.textContent.trim());
-        const parse = (s) => parseFloat(String(s).replace(/[\s\u00a0]/g, '').replace(',', '.'));
-        return { plan: parse(cells[5]), fact: parse(cells[6]) };
-      });
-      check(
-        `${vp.label}: «Факт» кабеля в метрах и меньше проектного`,
-        !!cableFact && cableFact.plan === 280 && cableFact.fact > 0 && cableFact.fact < 1000,
-        JSON.stringify(cableFact)
-      );
+      check(`${vp.label}: кабельных разделов и марок в спецификации нет`, !/КПСнг|Кабельная продукция/i.test(spec.text), '');
       await page.screenshot({ path: `${OUT}mobile-${vp.width}-spec.png` });
 
       await page.locator('#mobile-bar button[data-sheet="journal"]').tap();
       await sleep(450);
-      const journal = await page.evaluate(() => ({ rows: document.querySelectorAll('#tab-journal tbody tr').length, total: /Итого/.test(document.querySelector('#tab-journal').innerText) }));
-      check(`${vp.label}: шторка «Журнал» содержит трассы`, journal.rows >= 5 && journal.total, JSON.stringify(journal));
+      const journal = await page.evaluate(() => ({
+        rows: document.querySelectorAll('#tab-journal tbody tr').length,
+        expected: window.BolidGrid.store.wallChannels.length,
+        total: /Итого/.test(document.querySelector('#tab-journal').innerText),
+      }));
+      check(`${vp.label}: шторка «Журнал» содержит трассы`, journal.rows > 0 && journal.rows === journal.expected && journal.total, JSON.stringify(journal));
 
-      /* ---------- 6a. рисование кабельного канала и кнопка «Готово» ---------- */
+      /* ---------- 6a. рисование короба и кнопка «Готово» ---------- */
       await page.locator('#mobile-bar button[data-sheet="journal"]').tap();
       await sleep(300);
       const chBefore = (await state()).channels;
@@ -360,6 +352,16 @@ async function main() {
       await sleep(400);
       const chAfter = await state();
       check(`${vp.label}: кнопка «Готово» завершает трассу`, chAfter.channels === chBefore + 1, `${chBefore} → ${chAfter.channels}`);
+      check(`${vp.label}: в свойствах короба нет кабельных полей`, (await page.locator('#tab-props [data-f="cableModelId"]').count()) === 0);
+      await page.locator('#tab-props [data-ch-color]').nth(4).tap();
+      await sleep(250);
+      const mobileColor = await page.evaluate(() => {
+        const s = window.BolidGrid.store;
+        const ch = s.project.channels[s.project.channels.length - 1];
+        const path = document.querySelector(`#channels .channel[data-id="${ch.id}"] .channel-body`);
+        return { color: ch.color, computed: path ? getComputedStyle(path).stroke : '' };
+      });
+      check(`${vp.label}: цвет выбранного короба меняется на телефоне`, /^#[0-9a-f]{6}$/i.test(mobileColor.color) && mobileColor.computed !== 'rgb(52, 127, 217)', JSON.stringify(mobileColor));
 
       /* ---------- 6b. короб двигается: участок и весь короб (удержание) ---------- */
       // закрыть авто-открытые свойства

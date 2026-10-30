@@ -1,6 +1,6 @@
 /**
  * panels.js — панели интерфейса: каталог устройств, стены, точные свойства,
- * спецификация (BOM) и ведомость кабельных трасс.
+ * спецификация оборудования и ведомость коробов.
  */
 import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
@@ -362,7 +362,6 @@ export class Panels {
 
   _channelInspector(c) {
     const def = CHANNEL_KINDS.find((k) => k.id === c.kind) || CHANNEL_KINDS[0];
-    const cables = this._cableOptions();
     const simple = c.points.length === 2;
     const horizontal = simple && c.points[0][1] === c.points[1][1];
     const vertical = simple && c.points[0][0] === c.points[1][0];
@@ -385,7 +384,6 @@ export class Panels {
         <div class="row2"><label>Тип<select data-f="kind">${CHANNEL_KINDS.map((k) => `<option value="${k.id}" ${k.id === c.kind ? 'selected' : ''}>${escAll(k.label)}</option>`).join('')}</select></label><label>Ширина, мм<input data-f="width" type="number" min="5" max="600" step="5" value="${c.width}"></label></div>
         ${position}
         <section class="prop-section"><h5>Цвет на согласовании</h5><div class="swatches">${CHANNEL_COLORS.map((col) => `<button class="swatch ${(c.color || def.color).toLowerCase() === col ? 'active' : ''}" data-ch-color="${col}" style="background:${col}" title="${col}" aria-label="Цвет ${col}"></button>`).join('')}<label class="swatch-custom" title="Свой цвет"><input type="color" data-f="color" value="${escAll(c.color || def.color)}"></label></div></section>
-        <details><summary class="hintline">Марка кабеля</summary><label>Кабель<select data-f="cableModelId"><option value="">— не задан —</option>${cables.map((v) => `<option value="${escAll(v)}" ${v === c.cableModelId ? 'selected' : ''}>${escAll(v)}</option>`).join('')}</select></label></details>
         <div class="section-actions"><button class="btn tiny" data-act="focus-channel">Приблизить</button><button class="btn tiny danger" data-act="del">Удалить короб</button></div>
       </div>`;
   }
@@ -535,13 +533,6 @@ export class Panels {
     }
   }
 
-  _cableOptions() {
-    const set = new Set();
-    for (const row of this.store.spec?.cables || []) if (row.model) set.add(String(row.model).trim());
-    for (const c of this.store.project.channels) if (c.cableModelId) set.add(c.cableModelId);
-    return [...set];
-  }
-
   /* ================= спецификация (BOM) ================= */
   renderSpec() {
     const box = this.$('tab-spec');
@@ -554,8 +545,6 @@ export class Panels {
       return HIDDEN_SPEC.some((k) => hay.includes(k));
     };
     const placed = this.store.placedCountBySpecPos();
-    const journal = this.buildJournalRows();
-    const cableIf = new Map(journal.totalsByCable.map((r) => [norm(r.cable), r]));
     const rows = [];
     let equipmentCount = 0;
 
@@ -584,19 +573,6 @@ export class Panels {
         const model = getModel(modelId);
         equipmentCount += count;
         rows.push({ pos: ++i, name: model.full, model: model.model, vendor: model.vendor, unit: 'шт.', plan: null, fact: count, kind: model.kind, section: 'Размещено на стенах' });
-      }
-    }
-
-    const cableRows = [];
-    for (const row of spec?.cables || []) {
-      const key = norm(row.model || row.name);
-      // длина в журнале считается в мм, количество в спецификации — в метрах
-      const fact = (cableIf.get(key)?.length || 0) / 1000;
-      cableRows.push({ pos: row.pos, name: row.name, model: row.model, vendor: row.vendor, unit: row.unit || 'м', plan: +row.qty || 0, fact, section: row.group || 'Кабельная продукция' });
-    }
-    if (!cableRows.length) {
-      for (const r of journal.totalsByCable) {
-        cableRows.push({ pos: cableRows.length + 1, name: `Кабель по кабельному журналу`, model: r.cable, vendor: '—', unit: 'м', plan: null, fact: r.length / 1000, section: 'Кабельная продукция (расчёт)' });
       }
     }
 
@@ -633,8 +609,6 @@ export class Panels {
       ${spec ? `<div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.5;margin-bottom:8px">Источник: ${escAll(spec.meta?.docCode || '')} · ${escAll(spec.metaInfo?.source || '')}. «Факт» — количество, размещённое на стенах.</div>` : ''}
       <div class="pal-group-title">Оборудование</div>
       ${table(rows)}
-      <div class="pal-group-title">Кабельная продукция</div>
-      ${table(cableRows)}
       ${materialRows.length ? `<div class="pal-group-title">Изделия и материалы</div>${table(materialRows, { showFact: false })}` : ''}
       ${spareRows.length ? `<div class="pal-group-title">Запасные изделия</div>${table(spareRows)}` : ''}
       <div class="section-actions">
@@ -643,12 +617,12 @@ export class Panels {
         <button class="btn tiny" data-spec-act="print">Печать</button>
       </div>`;
     box.querySelectorAll('[data-spec-act]').forEach((b) =>
-      b.addEventListener('click', () => this._specExport(b.dataset.specAct, { rows, cableRows, materialRows, spareRows, equipmentCount }))
+      b.addEventListener('click', () => this._specExport(b.dataset.specAct, { rows, materialRows, spareRows, equipmentCount }))
     );
   }
 
   _specExport(act, data) {
-    const { rows, cableRows, materialRows, spareRows } = data;
+    const { rows, materialRows, spareRows } = data;
     const name = (this.store.project.meta.name || 'project').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
     const header = ['Поз.', 'Наименование', 'Тип, марка', 'Завод', 'Ед.', 'По спецификации', 'Факт', 'Расхождение'];
     const toRow = (r) => [r.pos ?? '', r.name ?? '', r.model ?? '', r.vendor ?? '', r.unit ?? '', r.plan ?? '', r.fact ?? '', r.plan != null && r.fact != null ? r.fact - r.plan : ''];
@@ -659,9 +633,6 @@ export class Panels {
         [],
         ['Оборудование'],
         header, ...rows.map(toRow),
-        [],
-        ['Кабельная продукция'],
-        header, ...cableRows.map(toRow),
       ];
       if (materialRows.length) lines.push([], ['Изделия и материалы'], header, ...materialRows.map(toRow));
       if (spareRows.length) lines.push([], ['Запасные изделия и принадлежности'], header, ...spareRows.map(toRow));
@@ -669,7 +640,7 @@ export class Panels {
       this.toast('Спецификация выгружена в CSV');
     } else if (act === 'md') {
       const tbl = (list) => ['| Поз. | Наименование | Тип, марка | Завод | Ед. | По спец. | Факт |', '|---:|---|---|---|---:|---:|---:|', ...list.map((r) => `| ${r.pos ?? ''} | ${r.name ?? ''} | ${r.model ?? ''} | ${r.vendor ?? ''} | ${r.unit ?? ''} | ${r.plan ?? ''} | ${r.fact ?? ''} |`)].join('\n');
-      const md = [`# Спецификация — ${this.store.project.meta.name || ''}`, '', this.store.project.meta.address || '', '', '## Оборудование', tbl(rows), '', '## Кабельная продукция', tbl(cableRows), materialRows.length ? `\n## Изделия и материалы\n${tbl(materialRows)}` : '', spareRows.length ? `\n## Запасные изделия\n${tbl(spareRows)}` : ''].join('\n');
+      const md = [`# Спецификация — ${this.store.project.meta.name || ''}`, '', this.store.project.meta.address || '', '', '## Оборудование', tbl(rows), materialRows.length ? `\n## Изделия и материалы\n${tbl(materialRows)}` : '', spareRows.length ? `\n## Запасные изделия\n${tbl(spareRows)}` : ''].join('\n');
       download(`${name}_спецификация.md`, md, 'text/markdown');
       this.toast('Спецификация выгружена в Markdown');
     } else if (act === 'print') {
@@ -677,7 +648,7 @@ export class Panels {
     }
   }
 
-  /* ================= кабельный журнал ================= */
+  /* ================= ведомость коробов ================= */
   buildJournalRows() {
     const st = this.store;
     const rows = [];
@@ -690,19 +661,11 @@ export class Panels {
         kind: c.kind,
         width: c.width,
         color: c.color || (CHANNEL_KINDS.find((k) => k.id === c.kind) || CHANNEL_KINDS[0]).color,
-        cable: c.cableModelId || '',
         length,
       });
     }
-    const byCable = new Map();
-    for (const r of rows) {
-      const key = r.cable || '— не задан —';
-      byCable.set(key, (byCable.get(key) || 0) + r.length);
-    }
-    const totalsByCable = [...byCable.entries()].map(([cable, length]) => ({ cable, length }));
     return {
       rows,
-      totalsByCable,
       totals: { length: rows.reduce((a, r) => a + r.length, 0) },
     };
   }
@@ -710,34 +673,29 @@ export class Panels {
   renderJournal() {
     const box = this.$('tab-journal');
     if (!box) return;
-    const { rows, totals, totalsByCable } = this.buildJournalRows();
+    const { rows, totals } = this.buildJournalRows();
     const st = this.store;
     box.innerHTML = `<div class="prop-title"><h4>Длина короба</h4><span class="badge">${rows.length} трасс</span></div>
       <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.5;margin-bottom:8px">
         Длина трассы считается по ломаной линии короба с учётом реальной ширины. Итог — сколько короба нужно закупить.
       </div>
       <table class="table">
-        <thead><tr><th>№</th><th>Стена / трасса</th><th>Кабель</th><th class="num">Длина, м</th></tr></thead>
+        <thead><tr><th>№</th><th>Стена / трасса</th><th class="num">Длина, м</th></tr></thead>
         <tbody>
         ${rows
           .map(
             (r, i) => `<tr>
           <td class="num">${i + 1}</td>
           <td><span class="color-dot" style="background:${r.color}"></span>${escAll(r.wall)}<br><span class="muted">${escAll((CHANNEL_KINDS.find((k) => k.id === r.kind) || CHANNEL_KINDS[0]).label)} · ${r.width ?? ''}</span></td>
-          <td>${escAll(r.cable || '—')}</td>
           <td class="num"><b>${(r.length / 1000).toFixed(2)}</b></td>
         </tr>`
           )
           .join('')}
         </tbody>
         <tfoot>
-          <tr class="total"><td colspan="3">Итого короба</td><td class="num">${(totals.length / 1000).toFixed(2)} м</td></tr>
+          <tr class="total"><td colspan="2">Итого короба</td><td class="num">${(totals.length / 1000).toFixed(2)} м</td></tr>
         </tfoot>
       </table>
-      ${totalsByCable.length ? `<div class="pal-group-title">По маркам кабеля</div>
-        <table class="table"><thead><tr><th>Кабель</th><th class="num">Длина, м</th></tr></thead><tbody>
-        ${totalsByCable.map((t) => `<tr><td>${escAll(t.cable)}</td><td class="num">${(t.length / 1000).toFixed(2)}</td></tr>`).join('')}
-        </tbody></table>` : ''}
       <div class="section-actions">
         <button class="btn tiny" data-journal-act="csv">Экспорт CSV</button>
       </div>`;
@@ -745,15 +703,14 @@ export class Panels {
       b.addEventListener('click', () => {
         const lines = [
           ['Ведомость короба'],
-          ['№', 'Стена', 'Тип трассы', 'Кабель', 'Длина, м'],
+          ['№', 'Стена', 'Тип трассы', 'Длина, м'],
           ...rows.map((r, i) => [
             i + 1,
             r.wall,
             (CHANNEL_KINDS.find((k) => k.id === r.kind) || CHANNEL_KINDS[0]).label,
-            r.cable,
             (r.length / 1000).toFixed(2),
           ]),
-          ['', '', '', 'ИТОГО', (totals.length / 1000).toFixed(2)],
+          ['', '', 'ИТОГО', (totals.length / 1000).toFixed(2)],
         ];
         const name = (st.project.meta.name || 'project').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
         download(`${name}_короб.csv`, toCSV(lines), 'text/csv');
@@ -895,12 +852,4 @@ export class Panels {
       { label: 'Отмена', onClick: (close) => close() },
     ]);
   }
-}
-
-/** нормализация марки кабеля для сопоставления спецификации и журнала */
-function norm(v) {
-  return String(v || '')
-    .toLowerCase()
-    .replace(/[\s«»"'()]/g, '')
-    .replace(/[хx*]/g, 'x');
 }

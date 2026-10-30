@@ -266,11 +266,13 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
 .wall-caption{fill:#334155;font-size:150px;font-weight:600}
 .wall-sub{fill:#64748b;font-size:86px}
 
-.channel-body{fill:none;stroke:#94a3b8;stroke-linecap:round;stroke-linejoin:round}
-.channel-inner{fill:none;stroke:#e2e8f0;stroke-linecap:round;stroke-linejoin:round}
+.channel-body{fill:none;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.channel-rail{fill:none;stroke:#94a3b8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.channel-inner{fill:none;stroke:#fff;stroke-linecap:round;stroke-linejoin:round;opacity:.32;pointer-events:none}
+.channel-joint{stroke:#94a3b8;stroke-width:3;opacity:.78;pointer-events:none}
+.channel-selection{fill:none;stroke:#347fd9;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:32 18;opacity:.9;pointer-events:none}
 .channel-hit{fill:none;stroke:transparent;stroke-linecap:round;stroke-linejoin:round;cursor:pointer;pointer-events:stroke}
-.channel.sel .channel-body{stroke:var(--accent-2)}
-.channel.sel .channel-inner{stroke:#bae6fd}
+.channel.sel .channel-inner{opacity:.38}
 .channel-vertex{fill:#fff;stroke:#0ea5e9;stroke-width:3;cursor:grab;pointer-events:all}
 
 .dev-symbol{pointer-events:none}
@@ -560,8 +562,9 @@ body.tool-channel .channel-kind{display:flex}
 .ruler-line{stroke:#6d7d89}.ruler-label{fill:#455761}
 .wall-caption{fill:#d8e1e8}.wall-sub{fill:#9dabb6}.ruler-label{fill:#aab8c2}
 .channel-body{stroke-linecap:butt;filter:drop-shadow(0 3px 2px rgba(30,41,49,.24))}
-.channel-inner{stroke:#f0f3f5;stroke-linecap:butt;opacity:.8}
-.channel.sel .channel-body{stroke:#347fd9;filter:none}.channel.sel .channel-inner{stroke:#d8eaff}
+.channel-rail{stroke-linecap:butt}
+.channel-inner{stroke:#fff;stroke-linecap:butt;opacity:.32}
+.channel.sel .channel-body{filter:none}.channel.sel .channel-inner{opacity:.38}
 .dev-symbol{filter:drop-shadow(0 5px 3px rgba(25,35,42,.22))}
 .dev.sel .dev-symbol{filter:drop-shadow(0 0 5px rgba(0,100,230,.35))}
 .dev.sel .sel-frame{stroke:#0064e6;stroke-dasharray:none}

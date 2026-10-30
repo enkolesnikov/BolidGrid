@@ -510,18 +510,17 @@ export class Store {
     return removed;
   }
 
-  /* ---------- кабель-каналы ---------- */
-  addChannel(points, { kind = 'кабель-канал', wallId = this.activeWallId, width = null, cableModelId = '', color = '', label = '' } = {}) {
+  /* ---------- короба ---------- */
+  addChannel(points, { kind = 'dkc', wallId = this.activeWallId, width = null, color = '', label = '' } = {}) {
     const def = CHANNEL_KINDS.find((k) => k.id === kind) || CHANNEL_KINDS[0];
     let ch;
-    this.act('кабельный канал', () => {
+    this.act('добавление короба', () => {
       ch = {
         id: uid('ch'),
         wallId,
         kind: def.id,
         width: width ?? def.width,
         points: points.map(([x, y]) => [Math.round(x), Math.round(y)]),
-        cableModelId,
         color: color || this.settings.channelColor || '',
       };
       this.project.channels.push(ch);
@@ -717,15 +716,18 @@ export function sanitizeProject(raw) {
     });
   const channels = (Array.isArray(raw.channels) ? raw.channels : [])
     .filter((c) => c && wallIds.has(c.wallId) && Array.isArray(c.points) && c.points.length >= 2)
-    .map((c) => ({
-      id: String(c.id || uid('ch')),
-      wallId: c.wallId,
-      kind: CHANNEL_KIND_IDS.includes(c.kind) ? c.kind : CHANNEL_KIND_IDS[0],
-      width: clamp(+c.width || 100, 5, 600),
-      color: /^#[0-9a-fA-F]{3,8}$/.test(String(c.color || '')) ? String(c.color) : '',
-      points: orthoPoints(c.points),
-      cableModelId: String(c.cableModelId ?? ''),
-    }));
+    .map((c) => {
+      // Старые проекты использовали id «кабель-канал»; кабельные поля больше не переносим.
+      const kind = c.kind === 'кабель-канал' ? 'dkc' : c.kind;
+      return {
+        id: String(c.id || uid('ch')),
+        wallId: c.wallId,
+        kind: CHANNEL_KIND_IDS.includes(kind) ? kind : CHANNEL_KIND_IDS[0],
+        width: clamp(+c.width || 100, 5, 600),
+        color: /^#[0-9a-fA-F]{3,8}$/.test(String(c.color || '')) ? String(c.color) : '',
+        points: orthoPoints(c.points),
+      };
+    });
   const dimensions = (Array.isArray(raw.dimensions) ? raw.dimensions : [])
     .filter((d) => d && wallIds.has(d.wallId) && Array.isArray(d.a) && Array.isArray(d.b))
     .map((d) => {

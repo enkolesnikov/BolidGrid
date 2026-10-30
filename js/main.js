@@ -345,7 +345,7 @@ for (const b of document.querySelectorAll('#stage-toolbar [data-tool]')) {
   });
 }
 
-/* тип новой трассы кабельного канала */
+/* тип новой трассы короба */
 const chKind = $('sel-channel-kind');
 if (chKind) {
   chKind.innerHTML = CHANNEL_KINDS.map((k) => `<option value="${k.id}">${k.label}</option>`).join('');
@@ -492,7 +492,7 @@ for (const ev of ['pointerdown', 'keydown']) {
   );
 }
 
-/* завершение трассы кабельного канала кнопкой в подсказке (мобильная версия) */
+/* завершение трассы короба кнопкой в подсказке (мобильная версия) */
 document.addEventListener('click', (e) => {
   if (e.target.closest?.('#btn-channel-done')) {
     editor.finishChannel();

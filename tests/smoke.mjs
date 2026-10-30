@@ -108,7 +108,7 @@ async function main() {
     await sleep(300);
     await page.evaluate(() => document.activeElement?.blur());
 
-    // --- кабельный канал ---
+    // --- короб ---
     await page.keyboard.press('c');
     check('клавиша C включает инструмент «канал»', (await state()).tool === 'channel');
     await page.mouse.click(wallBox.x + wallBox.width * 0.2, wallBox.y + wallBox.height * 0.2);
@@ -119,7 +119,7 @@ async function main() {
     const afterChannel = await state();
     check('рисование канала: ломаная из 3 точек добавляет канал', afterChannel.channels === s0.channels + 1, `${s0.channels} → ${afterChannel.channels}`);
 
-    // --- короб DKC 100×40: ширина трассы по умолчанию ---
+    // --- пластиковый кабель-канал DKC 100×60: ширина трассы по умолчанию ---
     const channelWidth = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const ch = s.project.channels[s.project.channels.length - 1];
@@ -231,9 +231,31 @@ async function main() {
       const s = window.BolidGrid.store;
       const ch = s.project.channels[s.project.channels.length - 1];
       const path = document.querySelector(`#channels .channel[data-id="${ch.id}"] .channel-body`);
-      return { color: ch.color, stroke: path?.getAttribute('stroke') || '' };
+      return {
+        color: ch.color,
+        stroke: path?.getAttribute('stroke') || '',
+        computed: path ? getComputedStyle(path).stroke : '',
+        slots: document.querySelectorAll(`#channels .channel[data-id="${ch.id}"] .channel-slot`).length,
+        lids: document.querySelectorAll(`#channels .channel[data-id="${ch.id}"] .channel-lid`).length,
+        joints: document.querySelectorAll(`#channels .channel[data-id="${ch.id}"] .channel-joint`).length,
+      };
     });
     check('цвет короба меняется и применяется на листе', /^#[0-9a-fA-F]{6}$/.test(chColor.color) && chColor.stroke.toLowerCase() === chColor.color.toLowerCase(), JSON.stringify(chColor));
+    const expectedRgb = await page.evaluate(() => {
+      const ch = window.BolidGrid.store.project.channels[window.BolidGrid.store.project.channels.length - 1];
+      const probe = document.createElement('span');
+      probe.style.color = ch.color;
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe).color;
+      probe.remove();
+      return value;
+    });
+    check('выделение не перекрывает выбранный цвет короба', chColor.computed === expectedRgb, JSON.stringify({ ...chColor, expectedRgb }));
+    check(
+      'кабель-канал DKC имеет гладкую ПВХ-крышку и стыки без видимой перфорации',
+      chColor.slots === 0 && chColor.lids > 0 && chColor.joints > 0 && (await page.locator('#channels .channel-rail').count()) > 0,
+      JSON.stringify({ slots: chColor.slots, lids: chColor.lids, joints: chColor.joints })
+    );
 
     // --- размерные линии ---
     const dimsBefore = await page.evaluate(() => (window.BolidGrid.store.project.dimensions || []).length);
@@ -485,27 +507,13 @@ async function main() {
     check('вкладка «Спецификация» отрисована', specTables >= 2, `tables=${specTables}`);
     check('в спецификации есть «Сириус» и С2000-СП2, убранных позиций нет', /Сириус/.test(specText) && /С2000-СП\s*2/.test(specText) && !/ДИП-34А-04/.test(specText) && !/Маяк-24-3М/.test(specText) && !/КМ-О/.test(specText), specText.replace(/\s+/g, ' ').slice(0, 120));
     check('в спецификации есть сопоставление факта и количества', /по\s*спец\./i.test(specText) && /факт/i.test(specText));
-    check('в спецификации посчитана длина кабеля по журналу', /КПСнг/.test(specText), '');
-    const cable = await page.evaluate(() => {
-      const table = [...document.querySelectorAll('#tab-spec table')].find((t) => /КПСнг/.test(t.textContent));
-      if (!table) return null;
-      const row = [...table.querySelectorAll('tbody tr')].find((tr) => /КПСнг/.test(tr.textContent));
-      if (!row) return null;
-      const cells = [...row.querySelectorAll('td')].map((td) => td.textContent.trim());
-      const parse = (s) => parseFloat(String(s).replace(/[\s\u00a0]/g, '').replace(',', '.'));
-      return { cells, plan: parse(cells[5]), fact: parse(cells[6]), diff: parse(cells[7]) };
-    });
-    check(
-      'кабель: «Факт» в метрах и сопоставим с проектом (не мм)',
-      !!cable && cable.fact > 0 && cable.fact < 1000 && Math.abs(cable.diff - (cable.fact - cable.plan)) < 0.05,
-      JSON.stringify(cable)
-    );
+    check('кабельные разделы и марки полностью убраны из спецификации', !/КПСнг|Кабельная продукция/i.test(specText), '');
 
-    // --- кабельный журнал ---
+    // --- ведомость коробов ---
     await page.locator('#tabs button[data-tab="journal"]').click();
     await page.waitForSelector('#tab-journal table');
     const journalRows = await page.locator('#tab-journal table').first().locator('tbody tr').count();
-    check('кабельный журнал содержит строки трасс', journalRows === afterUndo.channels, `rows=${journalRows}, channels=${afterUndo.channels}`);
+    check('ведомость содержит строки трасс', journalRows === afterUndo.channels, `rows=${journalRows}, channels=${afterUndo.channels}`);
     const journalText = await page.locator('#tab-journal').innerText();
     check('ведомость короба содержит длину и итог', /итого короба/i.test(journalText.replace(/\s+/g, ' ')) && /длина,\s*м/i.test(journalText.replace(/\s+/g, ' ')), journalText.replace(/\s+/g, ' ').slice(0, 90));
 
