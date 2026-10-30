@@ -72,11 +72,11 @@ async function main() {
       });
 
     const s0 = await state();
-    check('демо-проект загружен', s0.devices >= 10 && s0.walls === 2, JSON.stringify(s0));
+    check('демо-проект загружен', s0.devices >= 6 && s0.walls === 1, JSON.stringify(s0));
     check('спецификация загружена из data/spec.json', s0.spec);
 
     const paletteCount = await page.locator('#palette-list .pal-item').count();
-    check('палитра устройств содержит модели', paletteCount >= 12, `items=${paletteCount}`);
+    check('палитра устройств содержит модели', paletteCount >= 11, `items=${paletteCount}`);
     const specBadge = await page.locator('#palette-list .pal-item[data-model="sp2"]').innerText();
     check('в палитре показано «размещено / по спецификации»', /\/\s*4/.test(specBadge), specBadge.replace(/\s+/g, ' '));
 

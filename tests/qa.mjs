@@ -332,7 +332,7 @@ async function main() {
     const appA = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page: pageA, errors: errorsA } = appA;
     const sA0 = await getState(pageA);
-    check('демо-проект загружен при старте', sA0.devices === 10 && sA0.walls === 2 && sA0.channels === 5 && sA0.dims === 4, JSON.stringify(sA0));
+    check('демо-проект загружен при старте', sA0.devices === 6 && sA0.walls === 1 && sA0.channels === 3 && sA0.dims === 3, JSON.stringify(sA0));
     check('спецификация загружена (data/spec.json)', await pageA.evaluate(() => !!window.BolidGrid.store.spec));
 
     const metrics = () =>
@@ -469,7 +469,7 @@ async function main() {
     const appB = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page, errors: errorsB } = appB;
     const s0 = await getState(page);
-    check('B: стартовое демо 10 приборов / 5 коробов / 4 размера / 2 стены', s0.devices === 10 && s0.channels === 5 && s0.dims === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, dims: s0.dims, w: s0.walls }));
+    check('B: стартовое демо 6 приборов / 3 короба / 3 размера / 1 стена', s0.devices === 6 && s0.channels === 3 && s0.dims === 3 && s0.walls === 1, JSON.stringify({ d: s0.devices, c: s0.channels, dims: s0.dims, w: s0.walls }));
 
     const paletteIds = await page.$$eval('#palette-list .pal-item', (els) => els.map((e) => e.dataset.model));
     check('B: палитра содержит ровно 15 моделей (приборы и оповещатели)', paletteIds.length === 12, `count=${paletteIds.length}`);
@@ -491,7 +491,7 @@ async function main() {
     }
     check('B: все 12 моделей размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
     const s20 = await getState(page);
-    check('B: после размещения 12 моделей устройств 22 (10+12)', s20.devices === 22 && s20.wallDevices === s0.wallDevices + 12, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
+    check('B: после размещения 12 моделей устройств 18 (6+12)', s20.devices === 18 && s20.wallDevices === s0.wallDevices + 12, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
     const placement = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const wallDevs = s.wallDevices;
@@ -507,19 +507,19 @@ async function main() {
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 40);
     const su = await getState(page);
-    check('B: 12×undo возвращает исходные 10 приборов', su.devices === 10, `devices=${su.devices}`);
+    check('B: 12×undo возвращает исходные 6 приборов', su.devices === 6, `devices=${su.devices}`);
     check('B: после 20×undo история пуста (canUndo=false)', su.canUndo === false && su.undoLen === 0, JSON.stringify({ canUndo: su.canUndo, undoLen: su.undoLen }));
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 60);
     const sExtra = await getState(page);
-    check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 10 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
+    check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 6 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+y'), 30);
     const sr = await getState(page);
-    check('B: 12×redo восстанавливает 22 прибора', sr.devices === 22, `devices=${sr.devices}`);
+    check('B: 12×redo восстанавливает 18 приборов', sr.devices === 18, `devices=${sr.devices}`);
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 30);
-    check('B: повторный 12×undo снова даёт 10 приборов', (await getState(page)).devices === 10);
+    check('B: повторный 12×undo снова даёт 6 приборов', (await getState(page)).devices === 6);
 
     /* ---------- B2. Перетаскивание устройства ---------- */
     section('B2. Перетаскивание устройства мышью');
@@ -667,25 +667,10 @@ async function main() {
     check('B: отмена правок трассы и создания канала возвращает исходное число каналов', (await getState(page)).channels === channelsBefore);
 
     /* ---------- B5. Стены ---------- */
-    section('B5. Стены: переключение, добавление, изменение размера, удаление');
-    const walls = await page.evaluate(() => window.BolidGrid.store.project.walls.map((w) => ({ id: w.id, name: w.name, width: w.width, height: w.height })));
-    const wall2 = walls[1];
-    await page.locator('#wall-tabs .wall-tab').nth(1).click();
-    await sleep(350);
-    const sw2 = await getState(page);
-    const domWall2 = await page.evaluate(() => ({
-      devNodes: document.querySelectorAll('#devices .dev').length,
-      channelNodes: document.querySelectorAll('#channels .channel').length,
-      wallDevices: window.BolidGrid.store.wallDevices.length,
-      wallChannels: window.BolidGrid.store.wallChannels.length,
-      sheetCaption: document.querySelector('#sheet .wall-caption')?.textContent || '',
-    }));
-    check('B: переключение на вторую демо-стену', sw2.wallId === wall2.id && sw2.wallName === wall2.name, JSON.stringify({ wall: sw2.wallName }));
-    check('B: при переключении рисуются устройства/каналы выбранной стены', domWall2.devNodes === domWall2.wallDevices && domWall2.channelNodes === domWall2.wallChannels && domWall2.devNodes > 0, JSON.stringify(domWall2));
-    check('B: подпись листа соответствует активной стене', domWall2.sheetCaption === wall2.name, domWall2.sheetCaption);
-    await page.locator('#wall-tabs .wall-tab').nth(0).click();
-    await sleep(350);
-    check('B: возврат на первую стену', (await getState(page)).wallId === wall1.id);
+    section('B5. Стены: добавление, переключение, изменение размера, удаление');
+    const demoWallsList = await page.evaluate(() => window.BolidGrid.store.project.walls.map((w) => ({ id: w.id, name: w.name, width: w.width, height: w.height })));
+    const demoWall1 = demoWallsList[0];
+    check('B: в демо одна стена', demoWallsList.length === 1 && (await getState(page)).walls === 1, JSON.stringify(demoWallsList));
 
     // добавить стену
     await page.locator('#btn-add-wall').click();
@@ -700,10 +685,10 @@ async function main() {
       const w = window.BolidGrid.store.wall;
       return { id: w.id, name: w.name, width: w.width, height: w.height, walls: window.BolidGrid.store.project.walls.length };
     });
-    check('B: добавлена стена с заданными размерами (3.5×2.2 м)', sAddWall.walls === 3 && addedWall.name === 'QA-стена' && addedWall.width === 3500 && addedWall.height === 2200, JSON.stringify(addedWall));
+    check('B: добавлена стена с заданными размерами (3.5×2.2 м)', sAddWall.walls === 2 && addedWall.name === 'QA-стена' && addedWall.width === 3500 && addedWall.height === 2200, JSON.stringify(addedWall));
     check('B: новая стена становится активной', sAddWall.wallId === addedWall.id);
 
-    // устройство на новой стене, затем уменьшение стены
+    // устройство на новой стене, переключение стен
     await placeModel(page, 'custom', 0.75, 0.6);
     const placedOnNew = await page.evaluate(() => {
       const s = window.BolidGrid.store;
@@ -711,6 +696,21 @@ async function main() {
       return { id: d.id, x: d.x, y: d.y, wallDevices: s.wallDevices.length };
     });
     check('B: устройство размещено на новой стене', placedOnNew.wallDevices === 1, JSON.stringify(placedOnNew));
+    await page.locator('#wall-tabs .wall-tab').nth(0).click();
+    await sleep(350);
+    const backToWall1 = await page.evaluate(() => ({
+      wallId: window.BolidGrid.store.wall.id,
+      caption: document.querySelector('#sheet .wall-caption')?.textContent || '',
+      devNodes: document.querySelectorAll('#devices .dev').length,
+      wallDevices: window.BolidGrid.store.wallDevices.length,
+    }));
+    check('B: переключение на первую стену', backToWall1.wallId === demoWall1.id && backToWall1.caption === demoWall1.name, JSON.stringify(backToWall1));
+    check('B: при переключении рисуются устройства выбранной стены', backToWall1.devNodes === backToWall1.wallDevices && backToWall1.devNodes === 6, JSON.stringify(backToWall1));
+    await page.locator('#wall-tabs .wall-tab').nth(1).click();
+    await sleep(350);
+    check('B: возврат на добавленную стену', (await getState(page)).wallId === addedWall.id);
+
+    // уменьшение стены
     await page.evaluate(({ id }) => window.BolidGrid.store.updateWall(id, { width: 1500, height: 1200 }), { id: addedWall.id });
     await sleep(400);
     const resized = await page.evaluate(({ wallId, devId }) => {
@@ -729,16 +729,26 @@ async function main() {
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(450);
     const sDelWall = await getState(page);
-    check('B: удаление добавленной стены возвращает 2 стены и 10 приборов', sDelWall.walls === 2 && sDelWall.devices === 10, JSON.stringify({ walls: sDelWall.walls, devices: sDelWall.devices }));
-    check('B: активной становится существующая стена', [wall1.id, wall2.id].includes(sDelWall.wallId), String(sDelWall.wallId));
+    check('B: удаление добавленной стены возвращает 1 стену и 6 приборов', sDelWall.walls === 1 && sDelWall.devices === 6, JSON.stringify({ walls: sDelWall.walls, devices: sDelWall.devices }));
+    check('B: активной становится оставшаяся стена', sDelWall.wallId === demoWall1.id);
 
-    // удалить демо-стену с устройствами + undo
-    await page.locator('#wall-tabs .wall-tab').nth(1).click();
-    await sleep(300);
-    await page.locator(`#walls-list [data-wall-del="${wall2.id}"]`).click();
+    // последняя стена не удаляется, а демо-стену удаляем при наличии второй
+    await page.locator('#walls-list [data-wall-del="${demoWall1.id}"]').click().catch(() => {});
+    await page.locator('#btn-add-wall').click();
+    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
+    await page.fill('#dlg-wall-name', 'QA-врем');
+    await page.fill('#dlg-wall-w', '3');
+    await page.fill('#dlg-wall-h', '2.5');
+    await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
+    await sleep(450);
+    const tempWall = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      return { id: s.wall.id, walls: s.project.walls.length };
+    });
+    await page.locator(`#walls-list [data-wall-del="${demoWall1.id}"]`).click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     const confirmText = await page.locator('#modal-body').innerText();
-    check('B: подтверждение удаления стены предупреждает о числе устройств', /3\s*устройств/.test(confirmText.replace(/\s+/g, ' ')), confirmText.replace(/\s+/g, ' ').slice(0, 160));
+    check('B: подтверждение удаления стены предупреждает о числе устройств', /6\s*устройств/.test(confirmText.replace(/\s+/g, ' ')), confirmText.replace(/\s+/g, ' ').slice(0, 160));
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(500);
     const sDeleteWall2 = await page.evaluate(() => {
@@ -754,13 +764,22 @@ async function main() {
     });
     check(
       'B: удаление стены удаляет её устройства, короба и размеры',
-      sDeleteWall2.walls === 1 && sDeleteWall2.devices === 7 && sDeleteWall2.orphanChannels === 0 && sDeleteWall2.orphanDims === 0,
+      sDeleteWall2.walls === 1 && sDeleteWall2.devices === 0 && sDeleteWall2.channelsLeft === 0 && sDeleteWall2.dimsLeft === 0 && sDeleteWall2.orphanChannels === 0 && sDeleteWall2.orphanDims === 0,
       JSON.stringify(sDeleteWall2)
     );
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 100);
     const sUndoWall = await getState(page);
-    check('B: undo восстанавливает стену с устройствами', sUndoWall.walls === 2 && sUndoWall.devices === 10, JSON.stringify({ walls: sUndoWall.walls, devices: sUndoWall.devices }));
+    check('B: undo восстанавливает стену с устройствами', sUndoWall.walls === 2 && sUndoWall.devices === 6, JSON.stringify({ walls: sUndoWall.walls, devices: sUndoWall.devices }));
+
+    // вернуться на демо-стену, убрать временную
+    await page.evaluate(({ id }) => window.BolidGrid.store.setActiveWall(id), { id: demoWall1.id });
+    await sleep(250);
+    await page.locator(`#walls-list [data-wall-del="${tempWall.id}"]`).click();
+    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
+    await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
+    await sleep(400);
+    check('B: после уборки осталась одна демо-стена', (await getState(page)).walls === 1 && (await getState(page)).devices === 6, JSON.stringify(await getState(page)));
 
     /* ---------- B6. Наложение устройств / длинные подписи / XSS ---------- */
     section('B6. Наложение устройств, длинные подписи, XSS');
@@ -830,13 +849,21 @@ async function main() {
 
     /* ---------- B7. Переключение стены во время перетаскивания ---------- */
     section('B7. Смена стены посреди перетаскивания');
+    // временная вторая стена для проверки смены стены во время drag
+    const b7Wall = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const w = s.addWall({ name: 'B7-стена', width: 2600, height: 2200 });
+      s.setActiveWall(window.BolidGrid.store.project.walls[0].id);
+      return { id: w.id };
+    });
+    await sleep(300);
     const midDragDev = (await page.evaluate(() => window.BolidGrid.store.wallDevices.map((d) => ({ id: d.id, x: d.x, y: d.y }))))[0];
     const hitBox = await page.locator(`#devices .dev[data-id="${midDragDev.id}"] .dev-hit`).boundingBox();
     const from = { x: hitBox.x + hitBox.width / 2, y: hitBox.y + hitBox.height / 2 };
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(from.x + 60, from.y + 20, { steps: 4 });
-    await page.evaluate((wid) => window.BolidGrid.store.setActiveWall(wid), wall2.id);
+    await page.evaluate((wid) => window.BolidGrid.store.setActiveWall(wid), b7Wall.id);
     await sleep(200);
     await page.mouse.move(from.x + 100, from.y + 40, { steps: 4 });
     await page.mouse.up();
@@ -868,6 +895,13 @@ async function main() {
       return { x: d.x, y: d.y };
     }, midDragDev.id);
     check('B: undo после drag со сменой стены восстанавливает координаты', backDev.x === midDragDev.x && backDev.y === midDragDev.y, JSON.stringify({ expect: [midDragDev.x, midDragDev.y], got: [backDev.x, backDev.y] }));
+    // убрать временную стену
+    await page.evaluate(({ tid, wid }) => {
+      const s = window.BolidGrid.store;
+      s.setActiveWall(wid);
+      s.removeWall(tid);
+    }, { tid: b7Wall.id, wid: wall1.id });
+    await sleep(300);
 
     /* ---------- B8. Undo/redo spam ---------- */
     section('B8. Undo/redo spam');
@@ -987,13 +1021,11 @@ async function main() {
     await sleep(300);
     await page.locator('#btn-zoom-fit').click();
     await sleep(200);
-    await placeModel(page, 'sp2', 0.38, 0.32);
-    await placeModel(page, 'sp2', 0.46, 0.32);
     const sp2State = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       return { fact4: s.placedCountBySpecPos().get(4) || 0, sp2Total: s.project.devices.filter((d) => d.modelId === 'sp2').length };
     });
-    check('B: добавлены 2 С2000-СП2 → 4 на стенах (план 4)', sp2State.sp2Total === 4 && sp2State.fact4 === 4, JSON.stringify(sp2State));
+    check('B: в демо 4×С2000-СП2 (план 4)', sp2State.sp2Total === 4 && sp2State.fact4 === 4, JSON.stringify(sp2State));
     const badge = await page.locator('#palette-list .pal-item[data-model="sp2"]').innerText();
     check('B: палитра показывает «4 / 4» для С2000-СП2', /4\s*\/\s*4/.test(badge.replace(/\s+/g, ' ')), badge.replace(/\s+/g, ' ').slice(0, 120));
 
@@ -1016,7 +1048,7 @@ async function main() {
       return { cls: pill?.className || '', text: pill?.textContent.trim() || '' };
     });
     check('B: поз.4 «По спец.» = 4', plan4 === 4, JSON.stringify(row4));
-    check('B: поз.4 «Факт» = 4 (2 демо + 2 добавленных)', fact4 === 4, JSON.stringify(row4));
+    check('B: поз.4 «Факт» = 4 (все размещены)', fact4 === 4, JSON.stringify(row4));
     check('B: поз.4 «Расхожд.» = 0 и подсвечено как норма', diff4 === 0 && /\bok\b/.test(pill4.cls), JSON.stringify(pill4));
     const allSpecText = specTables.map((t) => t.rows.map((r) => r.join(' ')).join(' ')).join(' ');
     check(
@@ -1346,17 +1378,28 @@ async function main() {
     await sleep(900);
     const demoWalls = await page.evaluate(() => window.BolidGrid.store.project.walls.map((w) => ({ id: w.id, name: w.name })));
     const wall1Id = demoWalls[0].id;
-    const tagsOnSecond = await page.evaluate(({ w1, w2 }) => {
+    // добавляем вторую стену и ставим на неё прибор — получаем обозначение 2.x
+    await page.locator('#btn-add-wall').click();
+    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
+    await page.fill('#dlg-wall-name', 'QA-нумерация');
+    await page.fill('#dlg-wall-w', '3');
+    await page.fill('#dlg-wall-h', '2.5');
+    await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
+    await sleep(450);
+    await placeModel(page, 'sp2', 0.45, 0.55);
+    const secondWall = await page.evaluate(() => {
       const s = window.BolidGrid.store;
-      return { remain: s.project.devices.filter((d) => d.wallId === w2).map((d) => d.tag).sort() };
-    }, { w1: wall1Id, w2: demoWalls[1].id });
+      return { id: s.wall.id, tags: s.wallDevices.map((d) => d.tag) };
+    });
+    check('B: на второй стене прибор получил обозначение 2.x', secondWall.tags.length === 1 && String(secondWall.tags[0]).startsWith('2.'), JSON.stringify(secondWall));
+    // удаляем первую (демо) стену
     await page.locator(`#walls-list [data-wall-del="${wall1Id}"]`).click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(600);
     const afterWallDel = await getState(page);
     check('B: первая стена удалена, осталась одна', afterWallDel.walls === 1, `walls=${afterWallDel.walls}`);
-    await placeModel(page, 'sp2', 0.45, 0.55);
+    await placeModel(page, 'sp2', 0.6, 0.55);
     const newTag = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const d = s.wallDevices[s.wallDevices.length - 1];

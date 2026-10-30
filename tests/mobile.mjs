@@ -427,7 +427,7 @@ async function main() {
         walls: document.querySelectorAll('#menu-walls .wall-item').length,
       }));
       check(`${vp.label}: меню действий открывается`, /sheet-menu/.test(menu.cls) && menu.sheetTop < vp.height, JSON.stringify(menu));
-      check(`${vp.label}: в меню есть действия и список стен`, menu.actions >= 8 && menu.walls === 2, `actions=${menu.actions}, walls=${menu.walls}`);
+      check(`${vp.label}: в меню есть действия и список стен`, menu.actions >= 8 && menu.walls === 1, `actions=${menu.actions}, walls=${menu.walls}`);
       await page.screenshot({ path: `${OUT}mobile-${vp.width}-menu.png` });
       await page.locator('#menu-sheet [data-sheet-close]').tap();
       await sleep(300);
