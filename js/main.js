@@ -38,6 +38,18 @@ function updateStatus(s) {
   if (counts) counts.textContent = `приборов: ${s.counts.devices} · коробов: ${s.counts.channels} · размеров: ${s.counts.dims || 0}`;
 }
 
+function updatePlacementStatus() {
+  const button = $('st-check');
+  if (!button) return;
+  const count = store.findPlacementIssues().length;
+  button.textContent = count ? `Пересечения: ${count}` : 'Нет пересечений';
+  button.classList.toggle('warn', count > 0);
+  button.classList.toggle('ok', count === 0);
+  button.title = count ? 'Показать места пересечений' : 'Габариты приборов и коробов не пересекаются';
+}
+
+$('st-check')?.addEventListener('click', () => panels.openIssuesDialog());
+
 /* ================== уведомления / тосты ================== */
 store.on((type, detail) => {
   if (type === 'toast') panels.toast(detail?.text || '');
@@ -53,6 +65,10 @@ store.on((type, detail) => {
 
 /* ================== реакция на состояние ================== */
 store.on((type) => {
+  if (['live', 'project', 'all', 'wall'].includes(type)) {
+    updateSelectionDock();
+    updatePlacementStatus();
+  }
   if (type === 'live') {
     editor.render();
     store.scheduleSave();
@@ -62,6 +78,7 @@ store.on((type) => {
     updateHistoryButtons();
     renderMenuWalls();
   } else if (type === 'selection') {
+    updateSelectionDock();
     const ch = store.selectedChannels()[0];
     if (ch && ch.color) {
       store.settings.channelColor = ch.color;
@@ -75,6 +92,8 @@ store.on((type) => {
     renderMenuWalls();
     syncWallSizeUI();
   } else if (type === 'tool') {
+    document.body.classList.toggle('tool-channel', store.tool === 'channel');
+    updateSelectionDock();
     panels.updateToolButtons();
     editor._hint();
     editor.render();
@@ -183,6 +202,31 @@ for (const btn of document.querySelectorAll('[data-action]')) {
   });
 }
 
+/* ================== компактная панель выбранного объекта ================== */
+function updateSelectionDock() {
+  const dock = $('selection-dock');
+  if (!dock) return;
+  const devices = store.selectedDevices();
+  const channels = store.selectedChannels();
+  const dims = store.selectedDimensions();
+  const total = devices.length + channels.length + dims.length;
+  const showDock = total > 0 && store.tool === 'select';
+  dock.hidden = !showDock;
+  document.body.classList.toggle('has-selection', showDock);
+  if (!showDock) return;
+  if (devices.length === 1 && total === 1) {
+    const d = devices[0];
+    $('dock-title').textContent = getModel(d.modelId).name;
+    $('dock-position').textContent = `X ${Math.round(d.x)} · низ ${Math.round(d.y)} мм`;
+  } else if (channels.length === 1 && total === 1) {
+    $('dock-title').textContent = 'Выбран короб';
+    $('dock-position').textContent = `Длина ${(store.channelLength(channels[0]) / 1000).toFixed(2)} м`;
+  } else {
+    $('dock-title').textContent = `Выбрано: ${total}`;
+    $('dock-position').textContent = devices.length > 1 ? 'Доступно выравнивание' : 'Откройте свойства для редактирования';
+  }
+}
+
 /* ================== мобильные шторки ================== */
 const MOBILE_MQ = window.matchMedia('(max-width: 900px)');
 const isMobile = () => MOBILE_MQ.matches;
@@ -240,9 +284,19 @@ for (const b of barButtons) {
   });
 }
 
-$('mobile-menu-btn')?.addEventListener('click', () => {
-  if (bodyEl.classList.contains('sheet-menu')) closeSheets();
-  else openSheet('menu');
+for (const id of ['mobile-menu-btn', 'desktop-menu-btn']) {
+  $(id)?.addEventListener('click', () => {
+    if (bodyEl.classList.contains('sheet-menu')) closeSheets();
+    else openSheet('menu');
+  });
+}
+$('dock-edit')?.addEventListener('click', () => openSheet('props'));
+$('btn-add-device')?.addEventListener('click', () => {
+  if (isMobile()) openSheet('palette');
+  else {
+    $('palette-search')?.focus();
+    panels.toast('Выберите модель в каталоге слева');
+  }
 });
 scrim?.addEventListener('click', closeSheets);
 for (const b of document.querySelectorAll('[data-sheet-close]')) b.addEventListener('click', closeSheets);
@@ -359,7 +413,10 @@ for (const id of ['wall-w', 'wall-h', 'wall-w-mobile', 'wall-h-mobile']) {
   const el = $(id);
   if (!el) continue;
   el.addEventListener('change', () => {
-    applyWallSize(parseFloat($('wall-w')?.value ?? $('wall-w-mobile')?.value), parseFloat($('wall-h')?.value ?? $('wall-h-mobile')?.value));
+    const mobile = id.endsWith('-mobile');
+    const w = $(mobile ? 'wall-w-mobile' : 'wall-w');
+    const h = $(mobile ? 'wall-h-mobile' : 'wall-h');
+    applyWallSize(parseFloat(w?.value), parseFloat(h?.value));
   });
 }
 
@@ -397,12 +454,26 @@ $('btn-zoom-in')?.addEventListener('click', () => editor.zoomBy(1.25));
 $('btn-zoom-out')?.addEventListener('click', () => editor.zoomBy(1 / 1.25));
 $('btn-zoom-fit')?.addEventListener('click', () => editor.fit());
 
-$('chk-snap')?.addEventListener('change', (e) => {
+function syncViewSettings() {
+  for (const id of ['chk-snap', 'chk-snap-mobile']) if ($(id)) $(id).checked = store.settings.snap;
+  for (const id of ['chk-grid', 'chk-grid-mobile']) if ($(id)) $(id).checked = store.settings.showGrid;
+  if ($('sel-grid')) $('sel-grid').value = String(store.settings.grid || 50);
+}
+for (const id of ['chk-snap', 'chk-snap-mobile']) $(id)?.addEventListener('change', (e) => {
   store.settings.snap = e.target.checked;
+  syncViewSettings();
+  store.scheduleSave();
   panels.toast(store.settings.snap ? 'Привязка включена' : 'Привязка выключена');
 });
-$('chk-grid')?.addEventListener('change', (e) => {
+for (const id of ['chk-grid', 'chk-grid-mobile']) $(id)?.addEventListener('change', (e) => {
   store.settings.showGrid = e.target.checked;
+  syncViewSettings();
+  store.scheduleSave();
+  editor.render();
+});
+$('sel-grid')?.addEventListener('change', (e) => {
+  store.settings.grid = +e.target.value || 50;
+  store.scheduleSave();
   editor.render();
 });
 $('file-input')?.addEventListener('change', (e) => {
@@ -450,6 +521,12 @@ window.addEventListener('keydown', (e) => {
   } else if (ctrl && e.key.toLowerCase() === 'd') {
     e.preventDefault();
     if (store.selectedDevices().length) store.duplicateDevices();
+  } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && store.selectedDevices().length) {
+    e.preventDefault();
+    const step = e.shiftKey ? 1 : 10;
+    const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+    const dy = e.key === 'ArrowUp' ? step : e.key === 'ArrowDown' ? -step : 0;
+    store.nudgeDevices(dx, dy);
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     e.preventDefault();
     actions.delete();
@@ -518,12 +595,16 @@ window.addEventListener('afterprint', () => {
   renderMenuWalls();
   syncLabelsUI();
   syncWallSizeUI();
+  syncViewSettings();
   renderToolColors();
+  updateSelectionDock();
+  updatePlacementStatus();
+  document.body.classList.toggle('tool-channel', store.tool === 'channel');
   editor._hint();
   requestAnimationFrame(() => {
     editor.fit();
     editor.render();
-    if (!restored) panels.toast('Загружен демонстрационный проект — нажмите «Демо-проект», чтобы вернуть его позже');
+    // Демо открывается сразу, без перекрывающего лист стартового уведомления.
   });
   console.info('[BolidGrid] готов:', {
     devices: store.project.devices.length,

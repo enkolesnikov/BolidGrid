@@ -40,7 +40,7 @@ export class Store {
     this.selection = [];
     this.tool = 'select';
     this.armedModelId = null;
-    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8' };
+    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8', selectionDims: true, smartSnap: true };
     this._undo = [];
     this._redo = [];
     this._before = null;
@@ -336,6 +336,165 @@ export class Store {
     this.emit('selection');
     return created;
   }
+  /** Выровнять приборы друг относительно друга; один прибор — относительно стены. */
+  alignDevices(mode) {
+    const devices = this.selectedDevices().filter((d) => d.wallId === this.activeWallId);
+    if (!devices.length) return false;
+    const rect = (d) => {
+      const m0 = getModel(d.modelId);
+      return { d, l: d.x, r: d.x + m0.w, b: d.y, t: d.y + m0.h, cx: d.x + m0.w / 2, cy: d.y + m0.h / 2, w: m0.w, h: m0.h };
+    };
+    const items = devices.map(rect);
+    const wall = this.wall;
+    const bounds = devices.length === 1
+      ? { l: 0, r: wall.width, b: 0, t: wall.height, cx: wall.width / 2, cy: wall.height / 2 }
+      : {
+          l: Math.min(...items.map((r) => r.l)), r: Math.max(...items.map((r) => r.r)),
+          b: Math.min(...items.map((r) => r.b)), t: Math.max(...items.map((r) => r.t)),
+          cx: (Math.min(...items.map((r) => r.l)) + Math.max(...items.map((r) => r.r))) / 2,
+          cy: (Math.min(...items.map((r) => r.b)) + Math.max(...items.map((r) => r.t))) / 2,
+        };
+    this.act('выравнивание приборов', () => {
+      if (mode === 'distribute-x' && items.length >= 3) {
+        const sorted = items.slice().sort((a, b) => a.cx - b.cx);
+        const first = sorted[0].cx;
+        const last = sorted[sorted.length - 1].cx;
+        sorted.forEach((r, i) => { r.d.x = Math.round(first + ((last - first) * i) / (sorted.length - 1) - r.w / 2); });
+      } else if (mode === 'distribute-y' && items.length >= 3) {
+        const sorted = items.slice().sort((a, b) => a.cy - b.cy);
+        const first = sorted[0].cy;
+        const last = sorted[sorted.length - 1].cy;
+        sorted.forEach((r, i) => { r.d.y = Math.round(first + ((last - first) * i) / (sorted.length - 1) - r.h / 2); });
+      } else {
+        for (const r of items) {
+          if (mode === 'left') r.d.x = bounds.l;
+          else if (mode === 'right') r.d.x = bounds.r - r.w;
+          else if (mode === 'center-x') r.d.x = Math.round(bounds.cx - r.w / 2);
+          else if (mode === 'bottom') r.d.y = bounds.b;
+          else if (mode === 'top') r.d.y = bounds.t - r.h;
+          else if (mode === 'center-y') r.d.y = Math.round(bounds.cy - r.h / 2);
+        }
+      }
+      for (const d of devices) {
+        const m0 = getModel(d.modelId);
+        d.x = clamp(Math.round(d.x), 0, Math.max(0, wall.width - m0.w));
+        d.y = clamp(Math.round(d.y), 0, Math.max(0, wall.height - m0.h));
+      }
+    });
+    return true;
+  }
+
+  nudgeDevices(dx, dy) {
+    const devices = this.selectedDevices();
+    if (!devices.length) return false;
+    this.act('точное перемещение', () => {
+      for (const d of devices) {
+        const m0 = getModel(d.modelId);
+        const wall = this.project.walls.find((w) => w.id === d.wallId) || this.wall;
+        d.x = clamp(Math.round(d.x + dx), 0, Math.max(0, wall.width - m0.w));
+        d.y = clamp(Math.round(d.y + dy), 0, Math.max(0, wall.height - m0.h));
+      }
+    });
+    return true;
+  }
+
+  /** Установить одинаковый свободный зазор между приборами, сохранив первый на месте. */
+  setDeviceGap(axis, gap) {
+    const devices = this.selectedDevices().filter((d) => d.wallId === this.activeWallId);
+    const value = Math.round(Number(gap));
+    if (devices.length < 2 || !['x', 'y'].includes(axis) || !Number.isFinite(value) || value < 0) return false;
+    const horizontal = axis === 'x';
+    const items = devices.map((d) => {
+      const model = getModel(d.modelId);
+      return { d, model, start: horizontal ? d.x : d.y, size: horizontal ? model.w : model.h };
+    }).sort((a, b) => a.start - b.start);
+    let cursor = items[0].start;
+    const targets = items.map((item, index) => {
+      if (index) cursor += items[index - 1].size + value;
+      return { item, position: cursor };
+    });
+    const wallSize = horizontal ? this.wall.width : this.wall.height;
+    const end = targets[targets.length - 1];
+    if (end.position + end.item.size > wallSize) return false;
+    this.act('точный зазор между приборами', () => {
+      for (const { item, position } of targets) item.d[axis] = Math.round(position);
+    });
+    return true;
+  }
+
+  /** Найти реальные пересечения габаритов приборов и полос коробов на активной стене. */
+  findPlacementIssues(wallId = this.activeWallId) {
+    const devices = this.project.devices.filter((d) => d.wallId === wallId);
+    const channels = this.project.channels.filter((c) => c.wallId === wallId);
+    const rects = new Map(devices.map((d) => {
+      const model = getModel(d.modelId);
+      return [d.id, { l: d.x, r: d.x + model.w, b: d.y, t: d.y + model.h }];
+    }));
+    const overlaps = (a, b) => Math.max(a.l, b.l) < Math.min(a.r, b.r) && Math.max(a.b, b.b) < Math.min(a.t, b.t);
+    const issues = [];
+    for (let i = 0; i < devices.length; i++) {
+      for (let j = i + 1; j < devices.length; j++) {
+        const a = devices[i];
+        const b = devices[j];
+        if (!overlaps(rects.get(a.id), rects.get(b.id))) continue;
+        issues.push({
+          id: `devices:${a.id}:${b.id}`,
+          type: 'device-device',
+          wallId,
+          deviceIds: [a.id, b.id],
+          channelId: null,
+          message: `${a.tag || a.id} пересекается с ${b.tag || b.id}`,
+        });
+      }
+    }
+    for (const d of devices) {
+      const rect = rects.get(d.id);
+      for (const c of channels) {
+        const half = (c.width || 40) / 2;
+        const hit = (c.points || []).slice(1).some((p, i) => {
+          const a = c.points[i];
+          const band = {
+            l: Math.min(a[0], p[0]) - half,
+            r: Math.max(a[0], p[0]) + half,
+            b: Math.min(a[1], p[1]) - half,
+            t: Math.max(a[1], p[1]) + half,
+          };
+          return overlaps(rect, band);
+        });
+        if (!hit) continue;
+        issues.push({
+          id: `channel:${d.id}:${c.id}`,
+          type: 'device-channel',
+          wallId,
+          deviceIds: [d.id],
+          channelId: c.id,
+          message: `${d.tag || d.id} пересекается с коробом`,
+        });
+      }
+    }
+    return issues;
+  }
+
+  /** Добавить постоянные размеры «слева» и «от пола» для выбранного прибора. */
+  addDeviceDimensions(id) {
+    const d = this.getDevice(id);
+    if (!d) return 0;
+    const m0 = getModel(d.modelId);
+    let count = 0;
+    this.act('размеры положения прибора', () => {
+      if (!Array.isArray(this.project.dimensions)) this.project.dimensions = [];
+      if (d.x > 0) {
+        this.project.dimensions.push({ id: uid('dim'), wallId: d.wallId, a: [0, d.y], b: [d.x, d.y], text: '', offset: -55 });
+        count++;
+      }
+      if (d.y > 0) {
+        this.project.dimensions.push({ id: uid('dim'), wallId: d.wallId, a: [d.x, 0], b: [d.x, d.y], text: '', offset: -55 });
+        count++;
+      }
+    });
+    return count;
+  }
+
   removeSelection() {
     if (!this.selection.length) return 0;
     const removed = this.selection.length;
@@ -578,7 +737,7 @@ export function sanitizeProject(raw) {
         a: fix(d.a),
         b: fix(d.b),
         text: String(d.text ?? ''),
-        offset: clamp(+d.offset || 60, 0, 600),
+        offset: clamp(+d.offset || 60, -600, 600),
       };
     });
   return {

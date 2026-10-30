@@ -303,6 +303,180 @@ async function main() {
     const afterUndo = await state();
     check('Ctrl+Z возвращает удалённые устройства', afterUndo.devices === beforeDelete, `${afterDelete.devices} → ${afterUndo.devices}`);
 
+    // --- точное положение, размеры и согласование с коробом ---
+    const posId = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const d = s.wallDevices[0];
+      s.selectOne('device', d.id);
+      return d.id;
+    });
+    await sleep(180);
+    const posDevice = () => page.evaluate((id) => {
+      const s = window.BolidGrid.store;
+      const d = s.getDevice(id);
+      const m = window.BolidGrid.getModel(d.modelId);
+      return { x: d.x, y: d.y, w: m.w, h: m.h };
+    }, posId);
+    const changePos = async (axis, value) => {
+      const input = page.locator(`#tab-props [data-pos-${axis}]`);
+      await input.fill(String(value));
+      await input.press('Enter');
+      await sleep(100);
+    };
+
+    await page.selectOption('#tab-props [data-anchor-x]', 'center');
+    await changePos('x', 2100);
+    let pd = await posDevice();
+    check('X до центра прибора пересчитывается в координату левого края', pd.x === Math.round(2100 - pd.w / 2), JSON.stringify(pd));
+    await page.selectOption('#tab-props [data-anchor-x]', 'right');
+    await changePos('x', 3000);
+    pd = await posDevice();
+    check('X до правого края учитывает ширину прибора', pd.x === 3000 - pd.w, JSON.stringify(pd));
+    await page.selectOption('#tab-props [data-anchor-x]', 'left');
+    await changePos('x', 400);
+    pd = await posDevice();
+    check('X слева до прибора задаёт координату напрямую', pd.x === 400, JSON.stringify(pd));
+
+    await page.selectOption('#tab-props [data-anchor-y]', 'center');
+    await changePos('y', 1350);
+    pd = await posDevice();
+    check('H до центра прибора учитывает половину высоты', pd.y === Math.round(1350 - pd.h / 2), JSON.stringify(pd));
+    await page.selectOption('#tab-props [data-anchor-y]', 'top');
+    await changePos('y', 2000);
+    pd = await posDevice();
+    check('H до верха прибора учитывает полную высоту', pd.y === 2000 - pd.h, JSON.stringify(pd));
+    await page.locator('#tab-props [data-height="1500"]').click();
+    pd = await posDevice();
+    check('быстрая высота задаёт низ прибора от пола', pd.y === 1500, JSON.stringify(pd));
+
+    const temporaryDims = await page.evaluate(() => ({
+      groups: document.querySelectorAll('#overlay .selection-dimension').length,
+      labels: document.querySelectorAll('#overlay .smart-guide-label').length,
+      enabled: window.BolidGrid.store.settings.selectionDims,
+    }));
+    check('у выбранного прибора видны временные отступы и габарит', temporaryDims.enabled && temporaryDims.groups === 1 && temporaryDims.labels >= 1, JSON.stringify(temporaryDims));
+    await page.locator('#tab-props [data-act="toggle-guides"]').click();
+    await sleep(100);
+    check('временные отступы можно отключить', (await page.locator('#overlay .selection-dimension').count()) === 0);
+    await page.locator('#tab-props [data-act="toggle-guides"]').click();
+    const beforeDeviceDims = await page.evaluate(() => window.BolidGrid.store.project.dimensions.length);
+    await page.locator('#tab-props [data-act="add-dims"]').click();
+    await sleep(150);
+    const addedDims = await page.evaluate((before) => {
+      const s = window.BolidGrid.store;
+      const d = s.selectedDevices()[0];
+      const added = s.project.dimensions.slice(before);
+      return {
+        count: s.project.dimensions.length,
+        added: added.map((x) => ({ a: x.a, b: x.b, offset: x.offset })),
+        expected: { x: d.x, y: d.y },
+      };
+    }, beforeDeviceDims);
+    check('кнопка добавляет постоянные размеры слева и от пола', addedDims.count === beforeDeviceDims + 2 && addedDims.added.length === 2 && addedDims.added.every((d) => d.offset < 0), JSON.stringify(addedDims));
+    await page.keyboard.press('Control+z');
+    await sleep(150);
+    check('оба добавленных размера отменяются одним действием', (await page.evaluate(() => window.BolidGrid.store.project.dimensions.length)) === beforeDeviceDims);
+
+    // Undo намеренно очищает выделение — вернём прибор перед проверкой стрелок.
+    await page.evaluate((id) => window.BolidGrid.store.selectOne('device', id), posId);
+    await sleep(100);
+    const beforeNudge = await posDevice();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Shift+ArrowUp');
+    const afterNudge = await posDevice();
+    check('стрелки двигают прибор на 10 мм, с Shift — на 1 мм', afterNudge.x === beforeNudge.x + 10 && afterNudge.y === beforeNudge.y + 1, JSON.stringify({ before: beforeNudge, after: afterNudge }));
+
+    const exportedGuides = await page.evaluate(async () => {
+      const text = await window.BolidGrid.editor.exportSVGFile();
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      return { dims: doc.querySelectorAll('.selection-dimension').length, lines: doc.querySelectorAll('.smart-guide-line').length, labels: doc.querySelectorAll('.smart-guide-label').length };
+    });
+    check('временные направляющие не попадают в экспорт SVG', exportedGuides.dims === 0 && exportedGuides.lines === 0 && exportedGuides.labels === 0, JSON.stringify(exportedGuides));
+
+    // Три прибора: все шесть выравниваний и равномерное распределение.
+    const groupIds = await page.evaluate(() => window.BolidGrid.store.wallDevices.slice(0, 3).map((d) => d.id));
+    const resetGroup = async () => {
+      await page.evaluate((ids) => {
+        const s = window.BolidGrid.store;
+        const coords = [[300, 900], [900, 600], [1600, 1200]];
+        ids.forEach((id, i) => { const d = s.getDevice(id); d.x = coords[i][0]; d.y = coords[i][1]; });
+        s.select(ids.map((id) => ({ type: 'device', id })));
+      }, groupIds);
+      await sleep(100);
+    };
+    const groupRects = () => page.evaluate((ids) => ids.map((id) => {
+      const d = window.BolidGrid.store.getDevice(id);
+      const m = window.BolidGrid.getModel(d.modelId);
+      return { id, x: d.x, y: d.y, w: m.w, h: m.h };
+    }), groupIds);
+    for (const mode of ['left', 'right', 'center-x', 'bottom', 'top', 'center-y']) {
+      await resetGroup();
+      const before = await groupRects();
+      await page.locator(`#tab-props [data-align="${mode}"]`).click();
+      const after = await groupRects();
+      const expected = before.map((r) => {
+        let x = r.x, y = r.y;
+        if (mode === 'left') x = Math.min(...before.map((v) => v.x));
+        if (mode === 'right') x = Math.max(...before.map((v) => v.x + v.w)) - r.w;
+        if (mode === 'center-x') x = Math.round((Math.min(...before.map((v) => v.x)) + Math.max(...before.map((v) => v.x + v.w))) / 2 - r.w / 2);
+        if (mode === 'bottom') y = Math.min(...before.map((v) => v.y));
+        if (mode === 'top') y = Math.max(...before.map((v) => v.y + v.h)) - r.h;
+        if (mode === 'center-y') y = Math.round((Math.min(...before.map((v) => v.y)) + Math.max(...before.map((v) => v.y + v.h))) / 2 - r.h / 2);
+        return { id: r.id, x, y };
+      });
+      check(`групповое выравнивание: ${mode}`, after.every((r, i) => r.x === expected[i].x && r.y === expected[i].y), JSON.stringify({ expected, after }));
+    }
+    for (const [mode, axis, size] of [['distribute-x', 'x', 'w'], ['distribute-y', 'y', 'h']]) {
+      await resetGroup();
+      await page.locator(`#tab-props [data-align="${mode}"]`).click();
+      const rects = await groupRects();
+      const centers = rects.map((r) => r[axis] + r[size] / 2).sort((a, b) => a - b);
+      check(`равномерное распределение: ${mode}`, Math.abs((centers[0] + centers[2]) / 2 - centers[1]) <= 1, JSON.stringify(centers));
+    }
+
+    await page.evaluate((id) => window.BolidGrid.store.selectOne('device', id), posId);
+    await sleep(100);
+    const channelLevels = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const d = s.selectedDevices()[0];
+      const m = window.BolidGrid.getModel(d.modelId);
+      const levels = s.wallChannels.filter((c) => c.points.some((p, i) => i && p[1] === c.points[i - 1][1])).flatMap((c) => c.points.slice(1).filter((p, i) => p[1] === c.points[i][1]).map((p) => ({ y: p[1], width: c.width || 40 })));
+      const above = levels.slice().sort((a, b) => Math.abs(a.y - d.y) - Math.abs(b.y - d.y))[0];
+      return { aboveY: Math.min(s.wall.height - m.h, above.y + above.width / 2) };
+    });
+    await page.locator('#tab-props [data-act="device-above-channel"]').click();
+    pd = await posDevice();
+    check('низ прибора можно поставить на верхнюю кромку короба', pd.y === channelLevels.aboveY, JSON.stringify({ actual: pd.y, expected: channelLevels.aboveY }));
+    const belowExpected = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const d = s.selectedDevices()[0];
+      const m = window.BolidGrid.getModel(d.modelId);
+      const levels = s.wallChannels.filter((c) => c.points.some((p, i) => i && p[1] === c.points[i - 1][1])).flatMap((c) => c.points.slice(1).filter((p, i) => p[1] === c.points[i][1]).map((p) => ({ y: p[1], width: c.width || 40 })));
+      const below = levels.sort((a, b) => Math.abs(a.y - (d.y + m.h)) - Math.abs(b.y - (d.y + m.h)))[0];
+      return Math.max(0, below.y - below.width / 2 - m.h);
+    });
+    await page.locator('#tab-props [data-act="device-below-channel"]').click();
+    pd = await posDevice();
+    check('верх прибора можно привязать к нижней кромке короба', pd.y === belowExpected, JSON.stringify({ actual: pd.y, expected: belowExpected }));
+
+    const simpleChannelId = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const c = s.wallChannels.find((x) => x.points.length === 2 && x.points[0][1] === x.points[1][1]);
+      s.selectOne('channel', c.id);
+      return c.id;
+    });
+    await sleep(100);
+    const chHeight = page.locator('#tab-props [data-ch-point="0"][data-axis="1"]');
+    await chHeight.fill('1600');
+    await chHeight.press('Enter');
+    await sleep(120);
+    const exactChannel = await page.evaluate((id) => window.BolidGrid.store.getChannel(id).points, simpleChannelId);
+    check('высота горизонтальной трассы меняется синхронно в обеих точках', exactChannel[0][1] === 1600 && exactChannel[1][1] === 1600, JSON.stringify(exactChannel));
+
+    await page.evaluate((id) => window.BolidGrid.store.selectOne('device', id), posId);
+    await sleep(120);
+    await page.screenshot({ path: new URL('output/smoke-positioning.png', import.meta.url).pathname, fullPage: false });
+
     // --- спецификация ---
     await page.locator('#tabs button[data-tab="spec"]').click();
     await page.waitForSelector('#tab-spec table');
@@ -431,6 +605,81 @@ async function main() {
       return { walls: st.project.walls.length, tag: st.nextTag(st.project.walls[0].id) };
     });
     check('после удаления первой стены нумерация продолжается (2.2)', tagState.tag === '2.2', JSON.stringify(tagState));
+
+    // --- точные зазоры и проверка пересечений ---
+    await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      st.replaceProject({
+        walls: [{ id: 'review-wall', name: 'Проверка', width: 4000, height: 2700 }],
+        devices: [
+          { id: 'r1', modelId: 'sp2', wallId: 'review-wall', x: 500, y: 1000, tag: '1.1' },
+          { id: 'r2', modelId: 'sp2', wallId: 'review-wall', x: 900, y: 1000, tag: '1.2' },
+          { id: 'r3', modelId: 'sp2', wallId: 'review-wall', x: 500, y: 1500, tag: '1.3' },
+        ],
+        channels: [{ id: 'rc1', wallId: 'review-wall', kind: 'кабель-канал', width: 100, points: [[2000, 0], [2000, 2000]] }],
+        dimensions: [],
+      });
+      st.select([{ type: 'device', id: 'r1' }, { type: 'device', id: 'r2' }]);
+    });
+    await sleep(150);
+    await page.locator('#tabs button[data-tab="props"]').click();
+    check('контрольная сцена изначально не содержит пересечений', await page.evaluate(() => window.BolidGrid.store.findPlacementIssues().length === 0));
+    check('для группы доступен ввод точного зазора', await page.locator('[data-gap-value]').count() === 1);
+    await page.fill('[data-gap-value]', '75');
+    await page.selectOption('[data-gap-direction]', 'x');
+    await page.click('[data-act="apply-gap"]');
+    const exactGap = await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      return { x1: st.getDevice('r1').x, x2: st.getDevice('r2').x, gap: st.getDevice('r2').x - st.getDevice('r1').x - 102 };
+    });
+    check('точный зазор по X сохраняет первый прибор и раздвигает остальные', exactGap.x1 === 500 && exactGap.gap === 75, JSON.stringify(exactGap));
+    const verticalGap = await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      const ok = st.setDeviceGap('y', 80);
+      return { ok, y1: st.getDevice('r1').y, y2: st.getDevice('r2').y };
+    });
+    check('точный зазор по Y учитывает высоту прибора', verticalGap.ok && verticalGap.y1 === 1000 && verticalGap.y2 === 1187, JSON.stringify(verticalGap));
+    const gapWithoutSpace = await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      const before = st.getDevice('r2').x;
+      const ok = st.setDeviceGap('x', 10000);
+      return { ok, unchanged: st.getDevice('r2').x === before };
+    });
+    check('слишком большой зазор не выполняется частично', !gapWithoutSpace.ok && gapWithoutSpace.unchanged, JSON.stringify(gapWithoutSpace));
+    await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      st.act('контрольное пересечение', () => {
+        st.getDevice('r2').x = st.getDevice('r1').x;
+        st.getDevice('r2').y = st.getDevice('r1').y;
+      });
+    });
+    await sleep(120);
+    const overlap = await page.evaluate(() => ({
+      issues: window.BolidGrid.store.findPlacementIssues().map((i) => i.type),
+      status: document.querySelector('#st-check').textContent,
+      marked: document.querySelectorAll('.dev.issue').length,
+    }));
+    check('пересечение двух приборов обнаруживается', overlap.issues.includes('device-device'), JSON.stringify(overlap));
+    check('статус и рамки на листе показывают пересечение', /Пересечения:/.test(overlap.status) && overlap.marked === 2, JSON.stringify(overlap));
+    await page.click('#st-check');
+    check('диалог проверки содержит переходы к местам пересечений', await page.locator('[data-review-index]').count() >= 1);
+    await page.locator('[data-review-index]').first().click();
+    check('выбор замечания закрывает диалог и выделяет прибор', await page.evaluate(() => document.querySelector('#modal').hidden && window.BolidGrid.store.isSelected('device', 'r1')));
+    await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      st.updateChannel('rc1', { points: [[0, 1550], [1000, 1550]] });
+      st.clearSelection();
+    });
+    check('пересечение прибора с полосой короба обнаруживается', await page.evaluate(() => window.BolidGrid.store.findPlacementIssues().some((i) => i.type === 'device-channel' && i.channelId === 'rc1')));
+    await page.click('#st-check');
+    await page.keyboard.press('Escape');
+    check('диалог проверки закрывается клавишей Esc', await page.locator('#modal').evaluate((node) => node.hidden));
+    const reviewNotExported = await page.evaluate(async () => {
+      const source = await window.BolidGrid.editor.exportSVGFile();
+      const doc = new DOMParser().parseFromString(source, 'image/svg+xml');
+      return doc.querySelectorAll('.issue-frame').length === 0;
+    });
+    check('служебные рамки пересечений не попадают в экспорт SVG', reviewNotExported);
 
     check('нет ошибок JavaScript на странице', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
     check('нет ошибок в консоли', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));

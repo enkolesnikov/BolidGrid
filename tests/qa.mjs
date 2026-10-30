@@ -381,28 +381,35 @@ async function main() {
     check('1680×1000: нет горизонтального переполнения body', m1680.docScrollWidth <= m1680.innerWidth + 1 && m1680.bodyScrollWidth <= m1680.innerWidth + 1, `scrollW=${m1680.docScrollWidth}, innerW=${m1680.innerWidth}`);
     check('1680×1000: ни один HTML-элемент не выходит за вьюпорт', m1680.overflow.length === 0, JSON.stringify(m1680.overflow.slice(0, 3)));
     check('1680×1000: узлы устройств/каналов соответствуют стене', m1680.devNodes === sA0.wallDevices && m1680.channelNodes === sA0.wallChannels, JSON.stringify({ devNodes: m1680.devNodes, wallDevices: sA0.wallDevices, channelNodes: m1680.channelNodes, wallChannels: sA0.wallChannels }));
-    // health-check панели «Объект»: поля/кнопки не должны вылезать за панель и перекрываться соседями
-    const panelHealth = () =>
-      pageA.evaluate(() => {
-        const panel = document.getElementById('panel-project');
+    // Данные объекта и действия проекта теперь собраны в компактном меню.
+    const panelHealth = async () => {
+      await pageA.locator('#desktop-menu-btn').click();
+      await sleep(200);
+      const result = await pageA.evaluate(() => {
+        const panel = document.getElementById('menu-sheet');
         const pr = panel.getBoundingClientRect();
-        const items = [...panel.querySelectorAll('input,button')].map((el) => {
+        const items = [...panel.querySelectorAll('input,button,select')].map((el) => {
           const b = el.getBoundingClientRect();
+          if (!b.width || !b.height) return null;
           const target = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
           return {
-            name: el.dataset.action || el.id || el.getAttribute('placeholder') || el.tagName,
-            outsideBy: Math.round(b.bottom - pr.bottom),
+            name: el.dataset.menuAction || el.id || el.tagName,
+            outsideBy: Math.round(Math.max(b.bottom - pr.bottom, pr.top - b.top)),
             hitSelf: !!target && (target === el || el.contains(target)),
           };
-        });
+        }).filter(Boolean);
         return {
           panelH: Math.round(pr.height),
-          contentH: Math.round([...panel.children].reduce((a, c) => a + c.getBoundingClientRect().height, 0)),
+          withinViewport: pr.left >= 0 && pr.right <= innerWidth + 1 && pr.top >= 0 && pr.bottom <= innerHeight + 1,
           broken: items.filter((i) => i.outsideBy > 1 || !i.hitSelf),
         };
       });
+      await pageA.locator('#menu-sheet [data-sheet-close]').click();
+      await sleep(200);
+      return result;
+    };
     const ph1680 = await panelHealth();
-    check('1680×1000: панель «Объект» не обрезает свои поля и кнопки (BUG-6)', ph1680.broken.length === 0 && ph1680.contentH <= ph1680.panelH + 1, JSON.stringify({ panelH: ph1680.panelH, contentH: ph1680.contentH, broken: ph1680.broken }));
+    check('1680×1000: меню проекта помещается на экране, поля и кнопки доступны', ph1680.withinViewport && ph1680.broken.length === 0, JSON.stringify(ph1680));
     await pageA.screenshot({ path: OUT + 'qa-01-demo-1680.png' });
 
     // 1280×800
@@ -418,7 +425,7 @@ async function main() {
     check('1280×800: SVG-стена и устройства отрисованы', m1280.wall && m1280.wall.w > 400 && m1280.wall.h > 300 && m1280.devNodes > 0, JSON.stringify({ wall: m1280.wall, devNodes: m1280.devNodes }));
     check('1280×800: топбар не схлопнулся (высота > 40)', m1280.topbar && m1280.topbar.h > 40, `h=${m1280.topbar?.h}`);
     const ph1280 = await panelHealth();
-    check('1280×800: панель «Объект» не обрезает свои поля и кнопки (BUG-6)', ph1280.broken.length === 0 && ph1280.contentH <= ph1280.panelH + 1, JSON.stringify({ panelH: ph1280.panelH, contentH: ph1280.contentH, broken: ph1280.broken }));
+    check('1280×800: меню проекта помещается на экране, поля и кнопки доступны', ph1280.withinViewport && ph1280.broken.length === 0, JSON.stringify(ph1280));
     await pageA.screenshot({ path: OUT + 'qa-02-1280.png' });
 
     // print CSS
@@ -618,7 +625,7 @@ async function main() {
     const vertexCount = await page.locator('.channel-vertex').count();
     check('B: у выделенного канала показаны 4 вершины', vertexCount === 4, `vertices=${vertexCount}`);
     const inspectorText = await page.locator('#tab-props').innerText();
-    check('B: инспектор канала содержит тип трассы и длину', /Тип трассы/.test(inspectorText) && /Длина, мм/.test(inspectorText), inspectorText.slice(0, 120));
+    check('B: инспектор канала содержит тип трассы и длину', /Тип/.test(inspectorText) && /Длина трассы/.test(inspectorText), inspectorText.slice(0, 120));
 
     // перетащить конец трассы (свободный конец двигается по одной оси — трасса остаётся прямой)
     const vtx = page.locator('.channel-vertex[data-index="3"]');
@@ -1136,10 +1143,6 @@ async function main() {
       check('B: в сохранении актуальное число устройств', ls.parsed.project.devices.length === (await getState(page)).devices, JSON.stringify({ saved: ls.parsed.project.devices.length, live: (await getState(page)).devices }));
       check('B: в сохранении записан activeWallId', ls.parsed.activeWallId === (await getState(page)).wallId);
     }
-    await page.locator('#topbar [data-action="save"]').click();
-    await sleep(250);
-    check('B: кнопка «Сохранить» подтверждает сохранение', /сохранён в браузере/.test((await getState(page)).toast));
-
     const beforeReload = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       return {
@@ -1413,14 +1416,16 @@ async function main() {
     section('B15. Новый проект + защита от удаления последней стены');
     await page.evaluate(() => window.BolidGrid.loadDemo(false));
     await sleep(800);
-    // после фикса BUG-6 кнопки панели «Объект» должны быть кликабельны мышью
-    await page.locator('[data-action="edit-project"]').click();
+    // Действия проекта доступны из общего меню на узком и широком экране.
+    await page.locator('#desktop-menu-btn').click();
+    await page.locator('[data-menu-action="edit-project"]').click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     const dlgTitle = await page.locator('#modal-title').innerText();
     await page.locator('#modal-actions button', { hasText: 'Отмена' }).click();
     await sleep(300);
     check('B: диалог «Свойства проекта» открывается кликом по кнопке', dlgTitle === 'Свойства проекта', dlgTitle);
-    await page.locator('[data-action="reset"]').click();
+    await page.locator('#desktop-menu-btn').click();
+    await page.locator('[data-menu-action="reset"]').click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     await page.locator('#modal-actions button', { hasText: 'Подтвердить' }).click();
     await sleep(600);

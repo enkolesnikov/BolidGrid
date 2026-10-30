@@ -235,7 +235,9 @@ async function main() {
       await sleep(350);
       const longSel = await state();
       check(`${vp.label}: долгое нажатие добавляет устройство в выделение`, longSel.selection === 2, `selection=${longSel.selection}`);
-      await tap(vp.width - 40, vp.height * 0.9);
+      // Нижнюю часть листа при выделении занимает компактная панель объекта.
+      // Проверяем касание именно по доступному пустому SVG, а не по этой панели.
+      await tap(vp.width - 40, vp.height * 0.72);
       await sleep(300);
       check(`${vp.label}: тап по пустому месту снимает выделение`, (await state()).selection === 0);
 
@@ -273,7 +275,7 @@ async function main() {
         cls: document.body.className,
         rightH: Math.round(document.getElementById('right').getBoundingClientRect().height),
         tab: document.querySelector('#tabs button.active')?.dataset.tab,
-        inputs: document.querySelectorAll('#tab-props input[data-f]').length,
+        inputs: document.querySelectorAll('#tab-props input[data-f], #tab-props input[data-pos-x], #tab-props input[data-pos-y]').length,
         tag: document.querySelector('#tab-props input[data-f="tag"]')?.value,
       }));
       check(`${vp.label}: «Свойства» открывает шторку с инспектором`, /sheet-right/.test(props.cls) && props.tab === 'props' && props.inputs >= 4, JSON.stringify(props));
@@ -431,7 +433,15 @@ async function main() {
       await page.screenshot({ path: `${OUT}mobile-${vp.width}-menu.png` });
       await page.locator('#menu-sheet [data-sheet-close]').tap();
       await sleep(300);
-      check(`${vp.label}: затемнение закрывает меню`, (await state()).sheet === '');
+      check(`${vp.label}: кнопка закрывает меню`, !/sheet-menu/.test((await state()).sheet));
+
+      /* ---------- 7b. проверка размещения доступна на телефоне ---------- */
+      const reviewTarget = await page.locator('#st-check').evaluate((node) => ({ visible: !!(node.offsetWidth && node.offsetHeight), height: node.getBoundingClientRect().height }));
+      check(`${vp.label}: кнопка проверки видима и удобна для касания`, reviewTarget.visible && reviewTarget.height >= 44, JSON.stringify(reviewTarget));
+      await page.locator('#st-check').tap();
+      check(`${vp.label}: проверка размещения открывается из статус-бара`, await page.locator('#modal-title').textContent() === 'Проверка размещения');
+      await page.locator('#modal-close').tap();
+      check(`${vp.label}: диалог проверки закрывается крестиком`, await page.locator('#modal').evaluate((node) => node.hidden));
 
       /* ---------- 8. ошибки ---------- */
       check(`${vp.label}: нет ошибок JS`, pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));

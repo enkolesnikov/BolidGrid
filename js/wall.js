@@ -34,6 +34,7 @@ export class WallEditor {
     this.longPressTimer = null;
     this.longPressFired = false;
     this.spaceDown = false;
+    this.smartGuides = [];
     this._raf = null;
     this._bind();
     this._observeResize();
@@ -74,7 +75,7 @@ export class WallEditor {
 
   _capture(e) {
     try {
-      this._capture(e);
+      this.svg.setPointerCapture(e.pointerId);
     } catch {
       /* синтетические события/неизвестный pointerId — не критично */
     }
@@ -657,6 +658,7 @@ export class WallEditor {
       this.tapDevice = null;
       this.longPressFired = false;
       this._clearLongPress();
+      this.smartGuides = [];
       if (d.moving) this.store.commit('перемещение устройств');
       else this.store._before = null;
       if (!d.moving && tapped && !longPressed) this.store.select([{ type: 'device', id: tapped.id }]);
@@ -728,16 +730,45 @@ export class WallEditor {
     if (!primary) return;
     let tx = this.snap(primary.x + dx);
     let ty = this.snap(primary.y + dy);
-    // привязка к кабельным каналам по высоте (низ устройства ложится на канал)
-    const chans = this.store.wallChannels;
-    if (chans.length) {
-      for (const ch of chans) {
-        for (const p of ch.points) {
-          if (Math.abs(ty - p[1]) < Math.max(15, 40)) ty = p[1];
+    const primaryModel = getModel(this.store.getDevice(primary.id)?.modelId || 'custom');
+    this.smartGuides = [];
+
+    // Умная привязка: края и центры соседних приборов, оси и кромки коробов.
+    if (this.snapOn() && this.store.settings.smartSnap !== false) {
+      const movingIds = new Set(drag.origins.map((o) => o.id));
+      const xTargets = [];
+      const yTargets = [];
+      for (const d of this.store.wallDevices) {
+        if (movingIds.has(d.id)) continue;
+        const m0 = getModel(d.modelId);
+        xTargets.push(d.x, d.x + m0.w / 2, d.x + m0.w);
+        yTargets.push(d.y, d.y + m0.h / 2, d.y + m0.h);
+      }
+      for (const ch of this.store.wallChannels) {
+        for (let i = 1; i < ch.points.length; i++) {
+          const a = ch.points[i - 1];
+          const b = ch.points[i];
+          if (a[0] === b[0]) xTargets.push(a[0]);
+          if (a[1] === b[1]) yTargets.push(a[1] + (ch.width || 40) / 2, a[1], a[1] - (ch.width || 40) / 2);
         }
       }
+      const tolerance = 9 / (this.pxPerMm || 0.2);
+      const findSnap = (value, offsets, targets) => {
+        let best = null;
+        for (const offset of offsets) {
+          for (const target of targets) {
+            const delta = target - (value + offset);
+            if (Math.abs(delta) <= tolerance && (!best || Math.abs(delta) < Math.abs(best.delta))) best = { delta, guide: target };
+          }
+        }
+        return best;
+      };
+      const sx = findSnap(tx, [0, primaryModel.w / 2, primaryModel.w], xTargets);
+      const sy = findSnap(ty, [0, primaryModel.h / 2, primaryModel.h], yTargets);
+      if (sx) { tx += sx.delta; this.smartGuides.push({ axis: 'x', value: sx.guide }); }
+      if (sy) { ty += sy.delta; this.smartGuides.push({ axis: 'y', value: sy.guide }); }
     }
-    const primaryModel = getModel(this.store.getDevice(primary.id)?.modelId || 'custom');
+
     const wall = this.wall;
     tx = clamp(tx, 0, wall.width - primaryModel.w);
     ty = clamp(ty, 0, wall.height - primaryModel.h);
@@ -970,22 +1001,25 @@ export class WallEditor {
     const labelMode = this.store.settings.labels || 'none';
     const showTag = labelMode !== 'none' && ppm >= 0.075;
     const showSub = labelMode === 'full' && ppm >= 0.13;
+    const issueIds = new Set(this.store.findPlacementIssues().flatMap((issue) => issue.deviceIds));
     let out = '';
     for (const d of this.store.wallDevices) {
       const model = getModel(d.modelId);
       const sel = this.store.isSelected('device', d.id) ? ' sel' : '';
+      const issue = issueIds.has(d.id) ? ' issue' : '';
       const label = d.tag || model.name;
       const yScreen = wallH - (d.y + model.h);
       const rot = d.rot || 0;
       // минимальная зона попадания 60×60 мм — чтобы маленькие модули (МПН и т.п.) можно было выбрать мышью
       const padX = Math.max(16, (60 - model.w) / 2);
       const padY = Math.max(16, (60 - model.h) / 2);
-      out += `<g class="dev${sel}" data-type="device" data-id="${d.id}" transform="translate(${d.x} ${yScreen})">
+      out += `<g class="dev${sel}${issue}" data-type="device" data-id="${d.id}" transform="translate(${d.x} ${yScreen})">
         <g transform="rotate(${rot} ${model.w / 2} ${model.h / 2})">
           <g class="dev-symbol">${symbolMarkup(model)}</g>
           <rect class="dev-hit" x="${-padX}" y="${-padY}" width="${model.w + padX * 2}" height="${model.h + padY * 2}" rx="10"/>
           <rect class="sel-frame" x="${-padX - 6}" y="${-padY - 6}" width="${model.w + padX * 2 + 12}" height="${model.h + padY * 2 + 12}" rx="12" vector-effect="non-scaling-stroke"/>
         </g>
+        <rect class="issue-frame" x="${-padX - 10}" y="${-padY - 10}" width="${model.w + padX * 2 + 20}" height="${model.h + padY * 2 + 20}" rx="14" vector-effect="non-scaling-stroke"/>
         ${showTag ? `<text class="dev-tag" x="${model.w / 2}" y="${model.h + 90}">${esc(label)}</text>` : ''}
         ${showSub ? `<text class="dev-sub" x="${model.w / 2}" y="${model.h + 152}">${esc(d.address || model.model)}</text>` : ''}
       </g>`;
@@ -1014,8 +1048,28 @@ export class WallEditor {
     return out;
   }
 
+  _selectionDimensions() {
+    if (!this.store.settings.selectionDims) return '';
+    const devices = this.store.selectedDevices();
+    if (devices.length !== 1 || this.store.selection.length !== 1 || devices[0].wallId !== this.wall.id) return '';
+    const d = devices[0];
+    const model = getModel(d.modelId);
+    const dims = [];
+    if (d.x > 0) dims.push({ id: `auto-x-${d.id}`, wallId: d.wallId, a: [0, d.y], b: [d.x, d.y], text: '', offset: -65 });
+    if (d.y > 0) dims.push({ id: `auto-y-${d.id}`, wallId: d.wallId, a: [d.x, 0], b: [d.x, d.y], text: '', offset: -65 });
+    if (!dims.length) return '';
+    return `<g class="selection-dimension">${dims.map((dim) => this._dimensionMarkup(dim, false, true)).join('')}</g><text class="smart-guide-label" x="${d.x + model.w / 2}" y="${this.toScreenY(d.y + model.h) - 28}" text-anchor="middle">${model.w} × ${model.h}</text>`;
+  }
+
+  _smartGuideMarkup() {
+    return this.smartGuides.map((g) => g.axis === 'x'
+      ? `<line class="smart-guide-line" x1="${g.value}" y1="0" x2="${g.value}" y2="${this.wall.height}"/>`
+      : `<line class="smart-guide-line" x1="0" y1="${this.toScreenY(g.value)}" x2="${this.wall.width}" y2="${this.toScreenY(g.value)}"/>`
+    ).join('');
+  }
+
   _overlay() {
-    let out = '';
+    let out = this._selectionDimensions() + this._smartGuideMarkup();
     if (this.band) {
       const x = Math.min(this.band.a[0], this.band.b[0]);
       const yTop = Math.min(this.toScreenY(this.band.a[1]), this.toScreenY(this.band.b[1]));
@@ -1104,7 +1158,7 @@ export class WallEditor {
     } else if (coarse) {
       text = 'Тап — выбрать · удержание — добавить в выделение · два пальца — масштаб.';
     } else {
-      text = 'Выбор: клик по устройству/каналу, рамкой — групповое выделение. <kbd>G</kbd> — объединить в шлейф, <kbd>Del</kbd> — удалить.';
+      text = 'Выберите прибор или короб. Перетащите — появятся направляющие; точные отступы задаются в «Свойствах».';
     }
 
     if (text === this._hintCache) return;
@@ -1252,7 +1306,7 @@ export class WallEditor {
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
-    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .dim-handle, .sel-frame')) g.remove();
+    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label')) g.remove();
     for (const g of walker.querySelectorAll('.sel')) g.classList.remove('sel');
     const meta = this.store.project.meta || {};
     const title = `${meta.name || 'BolidGrid'} — ${wall.name}`;

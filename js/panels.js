@@ -1,6 +1,6 @@
 /**
- * panels.js — панели интерфейса: палитра устройств, стены, свойства,
- * объединения (шлейфы/линии), спецификация (BOM) и кабельный журнал.
+ * panels.js — панели интерфейса: каталог устройств, стены, точные свойства,
+ * спецификация (BOM) и ведомость кабельных трасс.
  */
 import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
@@ -19,6 +19,8 @@ export class Panels {
     this.onRequestProjectDialog = onRequestProjectDialog || (() => {});
     this.activeTab = 'props';
     this.search = '';
+    this.anchorX = 'left';
+    this.anchorY = 'bottom';
     this._bind();
     this.renderAll();
   }
@@ -70,6 +72,15 @@ export class Panels {
     for (const btn of document.querySelectorAll('#tabs button')) {
       btn.addEventListener('click', () => this.setTab(btn.dataset.tab));
     }
+
+    // Диалоги: явная кнопка закрытия, Esc и возврат фокуса.
+    this.$('modal-close')?.addEventListener('click', () => this._modalClose?.());
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || this.$('modal')?.hidden) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      this._modalClose?.();
+    }, true);
 
     // удаление стены (делегирование)
     this.$('walls-list')?.addEventListener('click', (e) => {
@@ -258,6 +269,7 @@ export class Panels {
     const sel = this.store.selection;
     if (!sel.length) {
       box.innerHTML = this._inspectorEmpty();
+      this._wireInspector(box);
       return;
     }
     const devices = this.store.selectedDevices();
@@ -272,18 +284,18 @@ export class Panels {
 
   _inspectorEmpty() {
     const stats = this._projectStats();
-    return `<div class="prop-title"><h4>Проект</h4></div>
-      <dl class="kv">
-        <dt>Стен</dt><dd>${stats.walls}</dd>
-        <dt>Устройств</dt><dd>${stats.devices}</dd>
-        <dt>Кабельных каналов</dt><dd>${stats.channels} · ${m(stats.channelLen)}</dd>
-        <dt>Длина короба</dt><dd>${m(stats.channelLen)}</dd>
-        <dt>Размерных линий</dt><dd>${stats.dims}</dd>
-      </dl>
-      <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.6">
-        Выберите устройство или канал на стене, чтобы изменить параметры.
-        Устройства добавляются из палитры слева: нажмите модель, затем кликните на стене.
-      </div>`;
+    const issues = this.store.findPlacementIssues();
+    return `<div class="selection-empty">
+      <div class="prop-title"><h4>Ничего не выбрано</h4><span class="badge">${stats.devices} приборов</span></div>
+      <p>Коснитесь прибора или короба на стене. Здесь появятся точные размеры и действия.</p>
+      <div class="empty-steps">
+        <div><span>1</span>Добавьте прибор из каталога</div>
+        <div><span>2</span>Перетащите или задайте координаты</div>
+        <div><span>3</span>Проведите короб и добавьте размеры</div>
+      </div>
+      <button class="review-summary ${issues.length ? 'warn' : 'ok'}" data-act="review"><span>Проверка стены</span><b>${issues.length ? `Пересечений: ${issues.length}` : 'Пересечений нет'}</b></button>
+      <div class="measure-preview"><span>Общая длина трасс</span><b>${m(stats.channelLen)}</b></div>
+    </div>`;
   }
 
   _projectStats() {
@@ -300,61 +312,81 @@ export class Panels {
 
   _deviceInspector(d) {
     const model = getModel(d.modelId);
-    const modelOptions = MODELS.map(
-      (mm2) => `<option value="${mm2.id}" ${mm2.id === model.id ? 'selected' : ''}>${escAll(mm2.name)}</option>`
+    const modelOptions = MODELS.filter((m0) => !m0.hidden).map(
+      (m0) => `<option value="${m0.id}" ${m0.id === model.id ? 'selected' : ''}>${escAll(m0.name)}</option>`
     ).join('');
+    const xValue = this.anchorX === 'right' ? d.x + model.w : this.anchorX === 'center' ? d.x + model.w / 2 : d.x;
+    const yValue = this.anchorY === 'top' ? d.y + model.h : this.anchorY === 'center' ? d.y + model.h / 2 : d.y;
+    const horizontalChannels = this.store.wallChannels.filter((c) => c.points.some((p, i) => i && p[1] === c.points[i - 1][1]));
     return `<div class="prop-title"><span class="badge">${escAll(d.tag || '—')}</span><h4>${escAll(model.name)}</h4></div>
       <div class="form">
         <div class="row2">
-          <label>Обозначение (позиция)<input data-f="tag" value="${escAll(d.tag)}" placeholder="1.1"></label>
-          <label>Адрес / шлейф<input data-f="address" value="${escAll(d.address)}" placeholder="ДПЛС 1, адр. 12"></label>
+          <label>Обозначение<input data-f="tag" value="${escAll(d.tag)}" placeholder="1.1"></label>
+          <label>Модель<select data-f="modelId">${modelOptions}</select></label>
         </div>
-        <label>Модель устройства<select data-f="modelId">${modelOptions}</select></label>
-        <div class="row2">
-          <label>X, мм<input data-f="x" type="number" step="10" value="${Math.round(d.x)}"></label>
-          <label>Высота от пола, мм<input data-f="y" type="number" step="10" value="${Math.round(d.y)}"></label>
-        </div>
-        <div class="row2">
-          <label>Поворот<select data-f="rot">
-            ${[0, 90, 180, 270].map((r) => `<option value="${r}" ${r === (d.rot || 0) ? 'selected' : ''}>${r}°</option>`).join('')}
-          </select></label>
-          <label>Габарит, мм<input value="${model.w} × ${model.h}" disabled></label>
-        </div>
-        <label>Примечание<input data-f="note" value="${escAll(d.note)}" placeholder="прим."></label>
-        <div class="section-actions">
-          <button class="btn tiny" data-act="dup">Дублировать</button>
-          <button class="btn tiny" data-act="rotate">Повернуть</button>
-          <button class="btn tiny" data-act="focus">Приблизить</button>
-          <button class="btn tiny danger" data-act="del">Удалить</button>
-        </div>
+        <section class="prop-section">
+          <h5>Точное положение</h5>
+          <div class="position-grid">
+            <div class="position-field"><span>По горизонтали</span><div class="position-input"><input data-pos-x type="number" step="1" min="0" inputmode="numeric" value="${Math.round(xValue)}"><i>мм</i></div>
+              <select class="anchor-select" data-anchor-x aria-label="Точка отсчёта по горизонтали"><option value="left" ${this.anchorX === 'left' ? 'selected' : ''}>слева до прибора</option><option value="center" ${this.anchorX === 'center' ? 'selected' : ''}>до центра</option><option value="right" ${this.anchorX === 'right' ? 'selected' : ''}>справа до прибора</option></select></div>
+            <div class="position-field"><span>От пола</span><div class="position-input"><input data-pos-y type="number" step="1" min="0" inputmode="numeric" value="${Math.round(yValue)}"><i>мм</i></div>
+              <select class="anchor-select" data-anchor-y aria-label="Точка отсчёта по вертикали"><option value="bottom" ${this.anchorY === 'bottom' ? 'selected' : ''}>до низа прибора</option><option value="center" ${this.anchorY === 'center' ? 'selected' : ''}>до центра</option><option value="top" ${this.anchorY === 'top' ? 'selected' : ''}>до верха прибора</option></select></div>
+          </div>
+          <div class="measure-preview"><span>Габарит</span><b>${model.w} × ${model.h} мм</b></div>
+        </section>
+        <section class="prop-section">
+          <h5>Высота низа от пола</h5>
+          <div class="quick-values">${[900, 1200, 1500, 1800].map((v) => `<button class="btn tiny ${d.y === v ? 'active' : ''}" data-height="${v}">${fmt0(v)}</button>`).join('')}</div>
+        </section>
+        <section class="prop-section">
+          <h5>${this.store.selectedDevices().length > 1 ? 'Выровнять выбранные' : 'Выровнять на стене'}</h5>
+          ${this._alignmentButtons()}
+        </section>
+        ${horizontalChannels.length ? `<section class="prop-section"><h5>По высоте горизонтального короба</h5><div class="section-actions"><button class="btn tiny" data-act="device-above-channel">Низ на верх короба</button><button class="btn tiny" data-act="device-below-channel">Верх к низу короба</button></div></section>` : ''}
+        <section class="prop-section">
+          <button class="btn tiny ${this.store.settings.selectionDims ? 'active' : ''}" data-act="toggle-guides">${this.store.settings.selectionDims ? '✓ ' : ''}Показывать отступы на листе</button>
+          <div class="section-actions"><button class="btn accent" data-act="add-dims">Добавить размеры</button><button class="btn tiny" data-act="focus">Приблизить</button></div>
+        </section>
+        <details><summary class="hintline">Обозначение, адрес и примечание</summary><label>Адрес<input data-f="address" value="${escAll(d.address)}"></label><label>Примечание<input data-f="note" value="${escAll(d.note)}"></label></details>
+        <div class="section-actions"><button class="btn tiny" data-act="dup">Дублировать</button><button class="btn tiny danger" data-act="del">Удалить</button></div>
       </div>`;
+  }
+
+  _alignmentButtons() {
+    const n = this.store.selectedDevices().length;
+    return `<div class="align-grid">
+      <button class="btn tiny" data-align="left" title="По левому краю">Слева</button><button class="btn tiny" data-align="center-x" title="По центрам по вертикали">Центр X</button><button class="btn tiny" data-align="right" title="По правому краю">Справа</button>
+      <button class="btn tiny" data-align="top" title="По верхнему краю">Сверху</button><button class="btn tiny" data-align="center-y" title="По центрам по горизонтали">Центр Y</button><button class="btn tiny" data-align="bottom" title="По нижнему краю">Снизу</button>
+    </div>${n >= 3 ? `<div class="section-actions"><button class="btn tiny" data-align="distribute-x">Равномерно по X</button><button class="btn tiny" data-align="distribute-y">Равномерно по Y</button></div>` : ''}`;
   }
 
   _channelInspector(c) {
     const def = CHANNEL_KINDS.find((k) => k.id === c.kind) || CHANNEL_KINDS[0];
     const cables = this._cableOptions();
-    return `<div class="prop-title"><span class="badge">канал</span><h4>${escAll(c.kind)}</h4></div>
+    const simple = c.points.length === 2;
+    const horizontal = simple && c.points[0][1] === c.points[1][1];
+    const vertical = simple && c.points[0][0] === c.points[1][0];
+    let position = '';
+    if (simple) {
+      const [a, b] = c.points;
+      position = `<section class="prop-section"><h5>Точные координаты трассы</h5>
+        <div class="position-grid">
+          <label>${vertical ? 'X трассы' : 'X начала'}<div class="position-input"><input type="number" data-ch-point="0" data-axis="0" value="${Math.round(a[0])}"><i>мм</i></div></label>
+          <label>${horizontal ? 'Высота трассы' : 'H начала'}<div class="position-input"><input type="number" data-ch-point="0" data-axis="1" value="${Math.round(a[1])}"><i>мм</i></div></label>
+          <label>X конца<div class="position-input"><input type="number" data-ch-point="1" data-axis="0" value="${Math.round(b[0])}"><i>мм</i></div></label>
+          <label>H конца<div class="position-input"><input type="number" data-ch-point="1" data-axis="1" value="${Math.round(b[1])}"><i>мм</i></div></label>
+        </div><div class="channel-position-note">${horizontal ? 'Горизонтальный участок' : vertical ? 'Вертикальный участок' : 'Прямой участок'} · при изменении координат направление сохраняется.</div></section>`;
+    } else {
+      position = `<div class="channel-position-note">Ломаная трасса: ${c.points.length} точек. Тяните линию, чтобы сдвинуть участок, или вершины — чтобы изменить маршрут.</div>`;
+    }
+    return `<div class="prop-title"><span class="badge">короб</span><h4>${escAll(def.label)}</h4></div>
       <div class="form">
-        <label>Тип трассы<select data-f="kind">${CHANNEL_KINDS.map((k) => `<option value="${k.id}" ${k.id === c.kind ? 'selected' : ''}>${escAll(k.label)}</option>`).join('')}</select></label>
-        <div class="row2">
-          <label>Ширина, мм<input data-f="width" type="number" step="5" value="${c.width}"></label>
-          <label>Длина, мм<input value="${Math.round(this.store.channelLength(c))}" disabled></label>
-        </div>
-        <div>
-          <div class="pal-group-title">Цвет короба</div>
-          <div class="swatches">
-            ${CHANNEL_COLORS.map((col) => `<button class="swatch ${(c.color || def.color).toLowerCase() === col ? 'active' : ''}" data-ch-color="${col}" style="background:${col}" title="${col}"></button>`).join('')}
-            <label class="swatch-custom" title="Свой цвет"><input type="color" data-f="color" value="${escAll(c.color || def.color)}"></label>
-          </div>
-        </div>
-        <label>Кабель<select data-f="cableModelId">
-          <option value="">— не задан —</option>
-          ${cables.map((v) => `<option value="${escAll(v)}" ${v === c.cableModelId ? 'selected' : ''}>${escAll(v)}</option>`).join('')}
-        </select></label>
-        <div class="hintline">Точек в трассе: ${c.points.length}. Тяните вершины на стене, чтобы изменить трассу.</div>
-        <div class="section-actions">
-          <button class="btn tiny" data-act="del">Удалить канал</button>
-        </div>
+        <div class="measure-preview"><span>Длина трассы</span><b>${m(this.store.channelLength(c))}</b></div>
+        <div class="row2"><label>Тип<select data-f="kind">${CHANNEL_KINDS.map((k) => `<option value="${k.id}" ${k.id === c.kind ? 'selected' : ''}>${escAll(k.label)}</option>`).join('')}</select></label><label>Ширина, мм<input data-f="width" type="number" min="5" max="600" step="5" value="${c.width}"></label></div>
+        ${position}
+        <section class="prop-section"><h5>Цвет на согласовании</h5><div class="swatches">${CHANNEL_COLORS.map((col) => `<button class="swatch ${(c.color || def.color).toLowerCase() === col ? 'active' : ''}" data-ch-color="${col}" style="background:${col}" title="${col}" aria-label="Цвет ${col}"></button>`).join('')}<label class="swatch-custom" title="Свой цвет"><input type="color" data-f="color" value="${escAll(c.color || def.color)}"></label></div></section>
+        <details><summary class="hintline">Марка кабеля</summary><label>Кабель<select data-f="cableModelId"><option value="">— не задан —</option>${cables.map((v) => `<option value="${escAll(v)}" ${v === c.cableModelId ? 'selected' : ''}>${escAll(v)}</option>`).join('')}</select></label></details>
+        <div class="section-actions"><button class="btn tiny" data-act="focus-channel">Приблизить</button><button class="btn tiny danger" data-act="del">Удалить короб</button></div>
       </div>`;
   }
 
@@ -381,19 +413,12 @@ export class Panels {
 
   _multiInspector(devices, channels, dims = []) {
     const total = devices.length + channels.length + dims.length;
-    return `<div class="prop-title"><h4>Выбрано: ${total}</h4></div>
-      <dl class="kv">
-        <dt>Устройств</dt><dd>${devices.length}</dd>
-        <dt>Каналов</dt><dd>${channels.length}</dd>
-        <dt>Размеров</dt><dd>${dims.length}</dd>
-      </dl>
+    return `<div class="prop-title"><h4>Выбрано: ${total}</h4><span class="badge">${devices.length} приборов</span></div>
       <div class="form">
-        <div class="hintline">Shift+клик — добавить/убрать из выделения, рамка — групповое выделение.</div>
-        <div class="section-actions">
-          <button class="btn tiny" data-act="dup">Дублировать устройства</button>
-          <button class="btn tiny" data-act="rotate">Повернуть устройства</button>
-          <button class="btn tiny danger" data-act="del">Удалить выделенное</button>
-        </div>
+        ${devices.length ? `<section class="prop-section"><h5>Выравнивание приборов</h5>${this._alignmentButtons()}</section>` : ''}
+        ${devices.length >= 2 ? `<section class="prop-section"><h5>Свободный зазор между приборами</h5><div class="gap-control"><div class="position-input"><input data-gap-value type="number" min="0" step="1" inputmode="numeric" value="100" aria-label="Зазор в миллиметрах"><i>мм</i></div><select data-gap-direction aria-label="Направление зазора"><option value="x">по горизонтали</option><option value="y">по вертикали</option></select><button class="btn" data-act="apply-gap">Применить</button></div><div class="hintline">Первый прибор остаётся на месте, остальные выстраиваются с одинаковым зазором.</div></section>` : ''}
+        <div class="multi-summary">${channels.length ? `Коробов: ${channels.length}. ` : ''}${dims.length ? `Размеров: ${dims.length}.` : ''}На телефоне удерживайте прибор, чтобы добавить его в выделение.</div>
+        <div class="section-actions">${devices.length ? '<button class="btn tiny" data-act="dup">Дублировать приборы</button>' : ''}<button class="btn tiny danger" data-act="del">Удалить выбранное</button></div>
       </div>`;
   }
 
@@ -401,78 +426,112 @@ export class Panels {
     const st = this.store;
     const devices = st.selectedDevices();
     const single = devices.length === 1 ? devices[0] : null;
-    const channel = st.selectedChannels()[0];
+    const channel = st.selectedChannels().length === 1 ? st.selectedChannels()[0] : null;
+    const dim = st.selectedDimensions().length === 1 ? st.selectedDimensions()[0] : null;
 
-    box.querySelectorAll('[data-f]').forEach((inp) => {
-      inp.addEventListener('change', () => {
-        const f = inp.dataset.f;
-        if (!single) return;
-        let v;
-        if (inp.type === 'checkbox') v = inp.checked;
-        else if (inp.type === 'number') v = parseFloat(inp.value) || 0;
-        else v = inp.value;
-        st.updateDevice(single.id, { [f]: v });
-      });
-    });
+    if (single && !channel && !dim) {
+      box.querySelectorAll('[data-f]').forEach((inp) => inp.addEventListener('change', () => {
+        st.updateDevice(single.id, { [inp.dataset.f]: inp.type === 'number' ? parseFloat(inp.value) || 0 : inp.value });
+      }));
+      const updatePosition = (axis, input) => {
+        const model = getModel(single.modelId);
+        const value = Math.max(0, parseFloat(input.value) || 0);
+        if (axis === 'x') {
+          const x = this.anchorX === 'right' ? value - model.w : this.anchorX === 'center' ? value - model.w / 2 : value;
+          st.updateDevice(single.id, { x: Math.round(x) });
+        } else {
+          const y = this.anchorY === 'top' ? value - model.h : this.anchorY === 'center' ? value - model.h / 2 : value;
+          st.updateDevice(single.id, { y: Math.round(y) });
+        }
+      };
+      box.querySelector('[data-pos-x]')?.addEventListener('change', (e) => updatePosition('x', e.target));
+      box.querySelector('[data-pos-y]')?.addEventListener('change', (e) => updatePosition('y', e.target));
+      box.querySelector('[data-anchor-x]')?.addEventListener('change', (e) => { this.anchorX = e.target.value; this.renderInspector(); });
+      box.querySelector('[data-anchor-y]')?.addEventListener('change', (e) => { this.anchorY = e.target.value; this.renderInspector(); });
+      box.querySelectorAll('[data-height]').forEach((b) => b.addEventListener('click', () => {
+        this.anchorY = 'bottom';
+        st.updateDevice(single.id, { y: +b.dataset.height });
+      }));
+    }
+
     if (channel) {
-      box.querySelectorAll('[data-f]').forEach((inp) => {
-        inp.addEventListener('change', () => {
-          const f = inp.dataset.f;
-          let v = inp.type === 'number' ? parseFloat(inp.value) || 0 : inp.value;
-          st.updateChannel(channel.id, { [f]: v });
-        });
-      });
-      box.querySelectorAll('[data-ch-color]').forEach((sw) => {
-        sw.addEventListener('click', () => st.updateChannel(channel.id, { color: sw.dataset.chColor }));
-      });
-    }
-    if (st.selectedDimensions().length === 1) {
-      const dim = st.selectedDimensions()[0];
-      box.querySelectorAll('[data-f]').forEach((inp) => {
-        inp.addEventListener('change', () => {
-          const f = inp.dataset.f;
-          const patch = {};
-          if (f === 'ax') patch.a = [parseFloat(inp.value) || 0, dim.a[1]];
-          else if (f === 'ay') patch.a = [dim.a[0], parseFloat(inp.value) || 0];
-          else if (f === 'bx') patch.b = [parseFloat(inp.value) || 0, dim.b[1]];
-          else if (f === 'by') patch.b = [dim.b[0], parseFloat(inp.value) || 0];
-          else if (f === 'offset') patch.offset = parseFloat(inp.value) || 0;
-          else patch[f] = inp.value;
-          st.updateDimension(dim.id, patch);
-        });
-      });
-      for (const btn of box.querySelectorAll('[data-act]')) {
-        btn.addEventListener('click', () => {
-          if (btn.dataset.act === 'del') st.removeSelection();
-        });
-      }
-      return;
+      box.querySelectorAll('[data-f]').forEach((inp) => inp.addEventListener('change', () => {
+        st.updateChannel(channel.id, { [inp.dataset.f]: inp.type === 'number' ? parseFloat(inp.value) || 0 : inp.value });
+      }));
+      box.querySelectorAll('[data-ch-color]').forEach((sw) => sw.addEventListener('click', () => st.updateChannel(channel.id, { color: sw.dataset.chColor })));
+      box.querySelectorAll('[data-ch-point]').forEach((inp) => inp.addEventListener('change', () => {
+        const index = +inp.dataset.chPoint;
+        const axis = +inp.dataset.axis;
+        const value = parseFloat(inp.value) || 0;
+        const points = channel.points.map((p) => [...p]);
+        const horizontal = points[0][1] === points[1][1];
+        const vertical = points[0][0] === points[1][0];
+        if ((horizontal && axis === 1) || (vertical && axis === 0)) {
+          points[0][axis] = value;
+          points[1][axis] = value;
+        } else points[index][axis] = value;
+        points.forEach((p) => { p[0] = Math.max(0, Math.min(st.wall.width, p[0])); p[1] = Math.max(0, Math.min(st.wall.height, p[1])); });
+        st.updateChannel(channel.id, { points });
+      }));
     }
 
-    for (const btn of box.querySelectorAll('[data-act]')) {
-      btn.addEventListener('click', () => this._inspectorAction(btn.dataset.act, { single, channel, devices }));
+    if (dim) {
+      box.querySelectorAll('[data-f]').forEach((inp) => inp.addEventListener('change', () => {
+        const f = inp.dataset.f;
+        const patch = {};
+        if (f === 'ax') patch.a = [parseFloat(inp.value) || 0, dim.a[1]];
+        else if (f === 'ay') patch.a = [dim.a[0], parseFloat(inp.value) || 0];
+        else if (f === 'bx') patch.b = [parseFloat(inp.value) || 0, dim.b[1]];
+        else if (f === 'by') patch.b = [dim.b[0], parseFloat(inp.value) || 0];
+        else if (f === 'offset') patch.offset = parseFloat(inp.value) || 0;
+        else patch[f] = inp.value;
+        st.updateDimension(dim.id, patch);
+      }));
     }
+
+    box.querySelectorAll('[data-align]').forEach((btn) => btn.addEventListener('click', () => st.alignDevices(btn.dataset.align)));
+    box.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', () => this._inspectorAction(btn.dataset.act, { single, channel, devices })));
   }
 
   _inspectorAction(act, { single, channel, devices }) {
     const st = this.store;
     switch (act) {
-      case 'dup':
-        st.duplicateDevices(devices.map((d) => d.id));
+      case 'dup': st.duplicateDevices(devices.map((d) => d.id)); break;
+      case 'del': st.removeSelection(); break;
+      case 'review': this.openIssuesDialog(); break;
+      case 'apply-gap': {
+        const input = this.$('tab-props')?.querySelector('[data-gap-value]');
+        const direction = this.$('tab-props')?.querySelector('[data-gap-direction]')?.value || 'x';
+        const value = Number(input?.value);
+        const ok = st.setDeviceGap(direction, value);
+        this.toast(ok ? `Зазор ${Math.round(value)} мм применён` : 'Не хватает места на стене или выбрано меньше двух приборов', !ok);
         break;
-      case 'rotate':
-        st.act('поворот устройств', () => {
-          for (const d of devices) st.updateDevice(d.id, { rot: ((d.rot || 0) + 90) % 360 }, { commit: false });
-        });
+      }
+      case 'focus': if (single) this.editor.focusOn(single.x, single.y, 900); break;
+      case 'focus-channel': if (channel) { const mid = channel.points[Math.floor(channel.points.length / 2)]; this.editor.focusOn(mid[0], mid[1], 1400); } break;
+      case 'toggle-guides':
+        st.settings.selectionDims = !st.settings.selectionDims;
+        st.scheduleSave(); this.renderInspector(); this.editor.render();
         break;
-      case 'del':
-        st.removeSelection();
+      case 'add-dims': {
+        const count = single ? st.addDeviceDimensions(single.id) : 0;
+        this.toast(count ? 'Размеры слева и от пола добавлены на лист' : 'Прибор совпадает с краем или полом — размеры не нужны');
         break;
-      case 'focus':
-        if (single) this.editor.focusOn(single.x, single.y, 900);
+      }
+      case 'device-above-channel':
+      case 'device-below-channel': {
+        if (!single) break;
+        const model = getModel(single.modelId);
+        const candidates = st.wallChannels.filter((c) => c.points.some((p, i) => i && p[1] === c.points[i - 1][1]));
+        if (!candidates.length) break;
+        const levels = candidates.flatMap((c) => c.points.slice(1).filter((p, i) => p[1] === c.points[i][1]).map((p) => ({ y: p[1], width: c.width || 40 })));
+        const targetY = act === 'device-above-channel' ? single.y : single.y + model.h;
+        const nearest = levels.sort((a, b) => Math.abs(a.y - targetY) - Math.abs(b.y - targetY))[0];
+        const y = act === 'device-above-channel' ? nearest.y + nearest.width / 2 : nearest.y - nearest.width / 2 - model.h;
+        st.updateDevice(single.id, { y });
         break;
-      default:
-        break;
+      }
+      default: break;
     }
   }
 
@@ -706,6 +765,7 @@ export class Panels {
   /* ================= модальные окна ================= */
   openModal(title, bodyHtml, actions = [], { wide = false } = {}) {
     const modal = this.$('modal');
+    const previousFocus = document.activeElement;
     this.$('modal-title').textContent = title;
     const body = this.$('modal-body');
     body.innerHTML = bodyHtml;
@@ -715,7 +775,10 @@ export class Panels {
       modal.hidden = true;
       body.innerHTML = '';
       actionsBox.innerHTML = '';
+      this._modalClose = null;
+      if (previousFocus?.isConnected) previousFocus.focus();
     };
+    this._modalClose = close;
     for (const a of actions) {
       const b = el(`<button class="btn ${a.cls || ''}">${escAll(a.label)}</button>`);
       b.addEventListener('click', () => (a.onClick ? a.onClick(close) : close()));
@@ -724,7 +787,7 @@ export class Panels {
     modal.hidden = false;
     modal.querySelector('.modal')?.classList.toggle('wide', wide);
     const firstInput = body.querySelector('input, select, textarea');
-    setTimeout(() => firstInput?.focus(), 30);
+    setTimeout(() => (firstInput || this.$('modal-close'))?.focus(), 30);
     modal.onclick = (e) => {
       if (e.target === modal) close();
     };
@@ -746,6 +809,30 @@ export class Panels {
     box.hidden = false;
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => (box.hidden = true), 2600);
+  }
+
+  /* ================= проверка размещения ================= */
+  openIssuesDialog() {
+    const st = this.store;
+    const issues = st.findPlacementIssues();
+    const body = issues.length
+      ? `<p class="review-intro">Проверяются габариты приборов и фактическая ширина коробов на активной стене. Выберите строку, чтобы перейти к месту пересечения.</p><div class="review-list">${issues.map((issue, index) => `<button class="review-item" data-review-index="${index}"><span class="review-kind">${issue.type === 'device-device' ? 'Приборы' : 'Прибор и короб'}</span><b>${escAll(issue.message)}</b><span>Показать на листе</span></button>`).join('')}</div>`
+      : `<div class="review-empty"><b>Пересечений не найдено</b><p>Габариты приборов и полосы коробов на активной стене не пересекаются.</p></div>`;
+    const dialog = this.openModal('Проверка размещения', body, [{ label: 'Закрыть' }]);
+    this.$('modal-body')?.querySelectorAll('[data-review-index]').forEach((button) => button.addEventListener('click', () => {
+      const issue = st.findPlacementIssues()[+button.dataset.reviewIndex];
+      if (!issue) return;
+      const id = issue.deviceIds[0];
+      const device = st.getDevice(id);
+      dialog.close();
+      if (device) {
+        st.selectOne('device', id);
+        const model = getModel(device.modelId);
+        this.editor.focusOn(device.x + model.w / 2, device.y + model.h / 2, 1400);
+      } else if (issue.channelId) {
+        st.selectOne('channel', issue.channelId);
+      }
+    }));
   }
 
   /* ================= диалоги стены/проекта ================= */
