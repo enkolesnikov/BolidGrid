@@ -1270,6 +1270,33 @@ async function main() {
     check('B: экспортированный SVG содержит каналы и встроенный CSS', svgInfo.channels === svgInfo.wallChannels && svgInfo.styleLen > 1000, JSON.stringify({ channels: svgInfo.channels, styleLen: svgInfo.styleLen }));
     check('B: viewBox экспортированного SVG охватывает лист', /^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/.test(svgInfo.viewBox) && parseFloat(svgInfo.viewBox.split(' ')[2]) > 4000, svgInfo.viewBox);
 
+    // новая кнопка «SVG» в верхней панели (появилась после фикса BUG-5): реальный клик → скачивание
+    const [svgDownload] = await Promise.all([
+      page.waitForEvent('download', { timeout: 10000 }),
+      page.locator('#topbar [data-action="export-svg"]').click(),
+    ]);
+    const svgDlPath = OUT + 'qa-export-file.svg';
+    await svgDownload.saveAs(svgDlPath);
+    const svgDlText = await readFile(svgDlPath, 'utf8');
+    const svgDl = await page.evaluate((text) => {
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      return {
+        parserError: !!doc.querySelector('parsererror'),
+        root: doc.documentElement.tagName,
+        viewBox: doc.documentElement.getAttribute('viewBox'),
+        width: doc.documentElement.getAttribute('width'),
+        height: doc.documentElement.getAttribute('height'),
+        devs: doc.querySelectorAll('.dev').length,
+      };
+    }, svgDlText);
+    check(
+      'B: кнопка «SVG» на верхней панели скачивает валидный векторный лист',
+      !svgDl.parserError && svgDl.root === 'svg' && /^-?[\d.]+ -?[\d.]+ [\d.]+ [\d.]+$/.test(svgDl.viewBox || '') && +svgDl.width > 300 && svgDl.devs > 0,
+      JSON.stringify({ ...svgDl, file: svgDlPath })
+    );
+    check('B: скачанный SVG-файл имеет расширение .svg', /\.svg$/.test(svgDownload.suggestedFilename()), svgDownload.suggestedFilename());
+    check('B: скачивание SVG сопровождается подтверждением', /выгружен в SVG/.test((await getState(page)).toast), (await getState(page)).toast);
+
     // проверка экспортированного файла как самостоятельного SVG-документа
     const svgViewer = await appB.ctx.newPage();
     await svgViewer.goto(base + 'tests/output/qa-export.svg', { waitUntil: 'load' });
@@ -1415,17 +1442,16 @@ async function main() {
     section('B15. Новый проект + защита от удаления последней стены');
     await page.evaluate(() => window.BolidGrid.loadDemo(false));
     await sleep(800);
-    // Кнопки «Свойства проекта…» и «Новый проект» в панели «Объект» перекрыты палитрой (BUG-6),
-    // мышью недоступны — проверяем сами диалоги программным click() по реальным элементам.
-    await page.evaluate(() => document.querySelector('[data-action="edit-project"]').click());
+    // после фикса BUG-6 кнопки панели «Объект» должны быть кликабельны мышью
+    await page.locator('[data-action="edit-project"]').click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     const dlgTitle = await page.locator('#modal-title').innerText();
     await page.locator('#modal-actions button', { hasText: 'Отмена' }).click();
     await sleep(300);
-    check('B: диалог «Свойства проекта» открывается по своей кнопке (в обход BUG-6)', dlgTitle === 'Свойства проекта', dlgTitle);
-    await page.evaluate(() => document.querySelector('[data-action="reset"]').click());
+    check('B: диалог «Свойства проекта» открывается кликом по кнопке', dlgTitle === 'Свойства проекта', dlgTitle);
+    await page.locator('[data-action="reset"]').click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
+    await page.locator('#modal-actions button', { hasText: 'Подтвердить' }).click();
     await sleep(600);
     const fresh = await getState(page);
     check('B: «Новый проект» создаёт пустой проект с одной стеной', fresh.walls === 1 && fresh.devices === 0 && fresh.channels === 0 && fresh.groups === 0, JSON.stringify({ walls: fresh.walls, devices: fresh.devices }));
@@ -1469,6 +1495,7 @@ async function main() {
       ['qa-08-export-svg.png', 5000],
       ['qa-export.json', 1000],
       ['qa-export.svg', 5000],
+      ['qa-export-file.svg', 5000],
       ['qa-spec.csv', 200],
     ]) {
       const st = await stat(OUT + name).catch(() => null);

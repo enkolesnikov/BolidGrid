@@ -130,7 +130,9 @@ docs/SPEC-SOURCE.md   как извлечена спецификация из PD
 docs/USAGE.md         руководство пользователя
 docs/DATA-MODEL.md    формат файла проекта
 server.mjs            статический сервер без зависимостей
-tests/smoke.mjs       смоук-тест интерфейса (Playwright)
+tests/smoke.mjs       смоук-тест интерфейса (Playwright, 37 проверок)
+tests/qa.mjs          расширенный QA-сьют (Playwright, 177 проверок)
+docs/QA-REPORT.md     отчёт независимого QA, найденные и исправленные дефекты
 ```
 
 Данные проекта хранятся в `localStorage` (`bolidgrid:project:v1`) и могут быть
@@ -143,7 +145,7 @@ tests/smoke.mjs       смоук-тест интерфейса (Playwright)
 - Ванильный JavaScript (ES-модули), SVG-рендеринг без фреймворков и сборки.
 - `data/spec.json` — спецификация, извлечённая из PDF рабочей документации
   (PDF с повреждённым ToUnicode: текст восстановлен по именам глифов встроенного шрифта).
-- Playwright — смоук-тест интерфейса (`npm i && npm test`).
+- Playwright — смоук-тест (`npm test`) и расширенный QA-сьют (`node tests/qa.mjs`).
 
 ## Ограничения
 

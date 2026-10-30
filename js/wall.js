@@ -502,7 +502,7 @@ export class WallEditor {
       this.render();
       return;
     }
-    const ch = this.store.addChannel(draft.points, { kind: this.lastChannelKind || 'кабель-канал', wallId: draft.wallId });
+    const ch = this.store.addChannel(draft.points, { kind: this.store.settings.channelKind || 'кабель-канал', wallId: draft.wallId });
     this.store.tool = 'select';
     this.store.emit('tool');
     this._hint();

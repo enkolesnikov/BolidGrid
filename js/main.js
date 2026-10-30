@@ -5,7 +5,7 @@ import { Store } from './store.js';
 import { WallEditor } from './wall.js';
 import { Panels } from './panels.js';
 import { buildDemoProject } from './demo.js';
-import { getModel } from './catalog.js';
+import { getModel, CHANNEL_KINDS } from './catalog.js';
 import { download } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -51,6 +51,7 @@ store.on((type) => {
   } else if (type === 'all' || type === 'project') {
     editor.render();
     panels.renderFor(type);
+    updateHistoryButtons();
   } else if (type === 'selection') {
     editor.render();
     panels.renderFor('selection');
@@ -188,6 +189,26 @@ for (const b of document.querySelectorAll('#stage-toolbar [data-tool]')) {
   });
 }
 
+/* тип новой трассы кабельного канала */
+const chKind = $('sel-channel-kind');
+if (chKind) {
+  chKind.innerHTML = CHANNEL_KINDS.map((k) => `<option value="${k.id}">${k.label}</option>`).join('');
+  store.settings.channelKind = CHANNEL_KINDS[0].id;
+  chKind.value = store.settings.channelKind;
+  chKind.addEventListener('change', () => {
+    store.settings.channelKind = chKind.value;
+    panels.toast(`Тип трассы: ${chKind.options[chKind.selectedIndex].textContent}`);
+  });
+}
+
+/* доступность кнопок истории */
+function updateHistoryButtons() {
+  const undo = document.querySelector('[data-action="undo"]');
+  const redo = document.querySelector('[data-action="redo"]');
+  if (undo) undo.disabled = !store.canUndo;
+  if (redo) redo.disabled = !store.canRedo;
+}
+
 $('btn-zoom-in')?.addEventListener('click', () => editor.zoomBy(1.25));
 $('btn-zoom-out')?.addEventListener('click', () => editor.zoomBy(1 / 1.25));
 $('btn-zoom-fit')?.addEventListener('click', () => editor.fit());
@@ -287,6 +308,7 @@ window.addEventListener('afterprint', () => {
   store.ensureActiveWall();
   panels.renderAll();
   panels.updateToolButtons();
+  updateHistoryButtons();
   editor._hint();
   requestAnimationFrame(() => {
     editor.fit();

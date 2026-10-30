@@ -5,3 +5,4 @@ node_modules/
 tests/output/
 tests/screenshots/
 playwright-report/
+dist/

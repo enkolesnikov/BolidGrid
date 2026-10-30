@@ -154,6 +154,8 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
 }
 .wall-tab.active{background:#0d3a52;border-color:var(--accent);color:#e8f9ff}
 .switch{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none}
+.mini-select{background:#16233d;border:1px solid var(--line);border-radius:7px;padding:4px 6px;color:#d6e2f5;font-size:11.5px;max-width:190px}
+.mini-select:focus{outline:none;border-color:var(--accent)}
 .switch input{accent-color:var(--accent)}
 .zoom{display:flex;align-items:center;gap:4px;margin-left:6px}
 
