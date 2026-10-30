@@ -285,10 +285,13 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
 
 /* размерные линии */
 .dimension{pointer-events:none}
-.dim-line{stroke:#0f172a;stroke-linecap:butt}
-.dim-ext{stroke:#64748b;stroke-width:2;stroke-dasharray:9 7}
-.dim-arrow{fill:#0f172a}
-.dim-text{fill:#0f172a;font-size:112px;font-family:ui-monospace,monospace;font-weight:600}
+.dim-line{stroke:#334155;stroke-linecap:butt}
+.dim-ext{stroke:#94a3b8;stroke-width:1.5;stroke-dasharray:9 7}
+.dim-arrow{fill:#334155}
+.dim-text{
+  fill:#334155;font-size:84px;font-family:ui-monospace,monospace;font-weight:600;
+  paint-order:stroke;stroke:#f7f9fc;stroke-width:18px;stroke-linejoin:round;
+}
 .dim-hit{stroke:transparent;pointer-events:stroke;cursor:pointer}
 .dimension.sel .dim-line{stroke:#0284c7}
 .dimension.sel .dim-arrow{fill:#0284c7}
@@ -471,7 +474,7 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
   /* подписи на листе крупнее для мелкого экрана */
   .dev-tag{font-size:88px}
   .dev-sub{font-size:60px}
-  .dim-text{font-size:170px}
+  .dim-text{font-size:96px;stroke-width:22px}
   .group-label{font-size:130px}
   .wall-caption{font-size:230px}
   .wall-sub{font-size:130px}

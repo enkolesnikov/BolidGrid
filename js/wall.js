@@ -997,7 +997,9 @@ export class WallEditor {
   }
   _dimensions() {
     const dims = (this.store.project.dimensions || []).filter((d) => d.wallId === this.wall.id);
-    return dims.map((dim) => this._dimensionMarkup(dim, this.store.isSelected('dimension', dim.id))).join('');
+    // при мелком масштабе подписи размеров не рисуем: иначе они «заливают» лист тёмной полосой
+    const showText = (this.pxPerMm || 0.2) >= 0.095;
+    return dims.map((dim) => this._dimensionMarkup(dim, this.store.isSelected('dimension', dim.id), showText)).join('');
   }
   _dimGeom(dim) {
     const sa = [dim.a[0], this.toScreenY(dim.a[1])];
@@ -1061,7 +1063,7 @@ export class WallEditor {
     }
     return best;
   }
-  _dimensionMarkup(dim, sel) {
+  _dimensionMarkup(dim, sel, showText = true) {
     const g = this._dimGeom(dim);
     const { a2, b2, ux, uy, nx, ny } = g;
     const angle = (Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) * 180) / Math.PI;
@@ -1070,8 +1072,8 @@ export class WallEditor {
     const lenMm = Math.hypot(dim.b[0] - dim.a[0], dim.b[1] - dim.a[1]);
     const label = (dim.text || '').trim() || this._fmtDim(lenMm);
 
-    const al = 70; // длина стрелки, мм
-    const aw = 22; // полуширина стрелки, мм
+    const al = 55; // длина стрелки, мм
+    const aw = 15; // полуширина стрелки, мм
     const arrow = (tip, dirX, dirY) => {
       const baseX = tip[0] + dirX * al;
       const baseY = tip[1] + dirY * al;
@@ -1079,7 +1081,7 @@ export class WallEditor {
       const py = dirX * aw;
       return `<polygon points="${tip[0]},${tip[1]} ${baseX + px},${baseY + py} ${baseX - px},${baseY - py}" class="dim-arrow"/>`;
     };
-    const sw = Math.max(2.5, 1.6 / (this.pxPerMm || 0.2));
+    const sw = 1.2; // px: с vector-effect=non-scaling-stroke толщина не должна считаться в мм
 
     let out = `<g class="dimension${sel ? ' sel' : ''}" data-type="dimension" data-id="${dim.id}">
       <line class="dim-ext" x1="${g.sa[0]}" y1="${g.sa[1]}" x2="${a2[0]}" y2="${a2[1]}" vector-effect="non-scaling-stroke"/>
@@ -1087,7 +1089,7 @@ export class WallEditor {
       <line class="dim-line" x1="${a2[0]}" y1="${a2[1]}" x2="${b2[0]}" y2="${b2[1]}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>
       ${arrow(a2, ux, uy)}
       ${arrow(b2, -ux, -uy)}
-      <text class="dim-text" transform="translate(${mid[0] - nx * 45} ${mid[1] - ny * 45}) rotate(${textAngle})" text-anchor="middle">${esc(label)}</text>
+      ${showText ? `<text class="dim-text" transform="translate(${mid[0] - nx * 45} ${mid[1] - ny * 45}) rotate(${textAngle})" text-anchor="middle">${esc(label)}</text>` : ''}
     </g>`;
 
     return out;
