@@ -488,6 +488,12 @@ export class Panels {
     const box = this.$('tab-spec');
     if (!box) return;
     const spec = this.store.spec;
+    // позиции, которые заказчик исключил из работы: не показываем их в спецификации/CSV
+    const HIDDEN_SPEC = ['ДИП-34', 'ИПР', 'МОЛНИЯ', 'МАЯК', 'КМ-О', 'АКБ', 'DELTA', 'МПН'];
+    const isHiddenSpecRow = (row) => {
+      const hay = `${row.model || ''} ${row.name || ''}`.toUpperCase();
+      return HIDDEN_SPEC.some((k) => hay.includes(k));
+    };
     const placed = this.store.placedCountBySpecPos();
     const journal = this.buildJournalRows();
     const cableIf = new Map(journal.totalsByCable.map((r) => [norm(r.cable), r]));
@@ -496,6 +502,7 @@ export class Panels {
 
     if (spec?.equipment?.length) {
       for (const row of spec.equipment) {
+        if (isHiddenSpecRow(row)) continue;
         const fact = placed.get(+row.pos) || 0;
         equipmentCount += fact;
         rows.push({
@@ -537,7 +544,7 @@ export class Panels {
     const materialRows = (spec?.materials || []).map((row) => ({
       pos: row.pos, name: row.name, model: row.model, vendor: row.vendor, unit: row.unit || 'шт.', plan: +row.qty || 0, fact: null, section: row.group || 'Изделия и материалы',
     }));
-    const spareRows = (spec?.spares || []).map((row) => ({
+    const spareRows = (spec?.spares || []).filter((row) => !isHiddenSpecRow(row)).map((row) => ({
       pos: row.pos, name: row.name, model: row.model, vendor: row.vendor, unit: row.unit || 'шт.', plan: +row.qty || 0, fact: placed.get(+row.pos) || 0, section: row.group || 'Запасные изделия и принадлежности',
     }));
 

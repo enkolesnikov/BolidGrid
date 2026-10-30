@@ -320,7 +320,7 @@ async function main() {
         text: document.querySelector('#tab-spec').innerText,
         rightVisible: document.getElementById('right').getBoundingClientRect().top < innerHeight * 0.7,
       }));
-      check(`${vp.label}: шторка «Спец» показывает таблицы`, spec.tables >= 2 && /ДИП-34А-04/.test(spec.text), `tables=${spec.tables}`);
+      check(`${vp.label}: шторка «Спец» показывает таблицы`, spec.tables >= 2 && /Сириус/.test(spec.text) && !/ДИП-34А-04/.test(spec.text), `tables=${spec.tables}`);
       const cableFact = await page.evaluate(() => {
         const table = [...document.querySelectorAll('#tab-spec table')].find((t) => /КПСнг/.test(t.textContent));
         const row = table && [...table.querySelectorAll('tbody tr')].find((tr) => /КПСнг/.test(tr.textContent));

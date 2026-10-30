@@ -4,8 +4,10 @@
  * Проект целиком сериализуется в JSON: undo — это снимки проекта,
  * поэтому любые правки должны идти через begin()/commit() или act().
  */
-import { getModel, CHANNEL_KINDS, CHANNEL_KIND_IDS } from './catalog.js';
+import { getModel, MODELS, CHANNEL_KINDS, CHANNEL_KIND_IDS } from './catalog.js';
 import { uid, closestOnPolyline, polylineLength, clamp } from './util.js';
+
+const MODELS_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
 
 export const LS_KEY = 'bolidgrid:project:v1';
 export const SCHEMA_VERSION = 1;
@@ -535,6 +537,10 @@ export function sanitizeProject(raw) {
   const wallById = new Map(walls.map((w) => [w.id, w]));
   const devices = (Array.isArray(raw.devices) ? raw.devices : [])
     .filter((d) => d && wallIds.has(d.wallId))
+    .filter((d) => {
+      const m = MODELS_BY_ID.get(String(d.modelId));
+      return m ? !m.hidden : true; // скрытые модели (АКБ, МПН, Маяк, таблички, КМ-О и т.п.) не переносим
+    })
     .map((d) => {
       const model = getModel(d.modelId);
       const wall = wallById.get(d.wallId);

@@ -309,7 +309,7 @@ async function main() {
     const specTables = await page.locator('#tab-spec table').count();
     const specText = await page.locator('#tab-spec').innerText();
     check('вкладка «Спецификация» отрисована', specTables >= 2, `tables=${specTables}`);
-    check('в спецификации есть позиция «Сириус» и «ДИП-34А-04»', /Сириус/.test(specText) && /ДИП-34А-04/.test(specText));
+    check('в спецификации есть «Сириус» и С2000-СП2, убранных позиций нет', /Сириус/.test(specText) && /С2000-СП\s*2/.test(specText) && !/ДИП-34А-04/.test(specText) && !/Маяк-24-3М/.test(specText) && !/КМ-О/.test(specText), specText.replace(/\s+/g, ' ').slice(0, 120));
     check('в спецификации есть сопоставление факта и количества', /по\s*спец\./i.test(specText) && /факт/i.test(specText));
     check('в спецификации посчитана длина кабеля по журналу', /КПСнг/.test(specText), '');
     const cable = await page.evaluate(() => {
@@ -414,7 +414,7 @@ async function main() {
       return { x: d.x, y: d.y, models: st.project.devices.map((x) => x.modelId), chColor: ch.color, chLabel: ch.label, dims: st.project.dimensions.length, chPoints: ch.points, chStraight: segs.every(([dx, dy]) => dx === 0 || dy === 0) };
     });
     check('импорт: координаты устройств ограничены стеной', imported.x <= 5900 && imported.y >= 0, JSON.stringify(imported));
-    check('импорт: неизвестные модели заменяются на «прочее»', imported.models[1] === 'sp2' && imported.models.every(Boolean), JSON.stringify(imported.models));
+    check('импорт: устройства убранных моделей не загружаются', imported.models.length === 1 && imported.models[0] === 'sp2', JSON.stringify(imported.models));
     check('импорт: размерные линии и цвет короба нормализуются', imported.dims === 1 && imported.chColor === '' && imported.chLabel === undefined, JSON.stringify(imported));
     check('импорт: диагональные трассы выпрямляются в горизонтальные/вертикальные', imported.chStraight && imported.chPoints.length >= 2, JSON.stringify({ points: imported.chPoints }));
 
@@ -422,7 +422,7 @@ async function main() {
       const st = window.BolidGrid.store;
       st.replaceProject({
         walls: [{ id: 'a', name: 'A', width: 6000, height: 2700 }, { id: 'b', name: 'B', width: 6000, height: 2700 }],
-        devices: [{ id: 'd1', modelId: 'dip34a', wallId: 'b', x: 100, y: 100, tag: '2.1' }],
+        devices: [{ id: 'd1', modelId: 'sp2', wallId: 'b', x: 100, y: 100, tag: '2.1' }],
         channels: [],
       });
       st.activeWallId = 'b';

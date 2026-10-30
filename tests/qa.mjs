@@ -1001,9 +1001,9 @@ async function main() {
     await page.waitForSelector('#tab-spec table', { timeout: 5000 });
     await sleep(300);
     const specTables = await readSpecTables(page);
-    const equipTable = specTables.find((t) => /Оборудование/.test(t.section) && t.rows.length >= 12);
+    const equipTable = specTables.find((t) => /Оборудование/.test(t.section) && t.rows.length >= 4);
     const cableTable = specTables.find((t) => /Кабельная продукция/.test(t.section) && t.rows.some((r) => /КПСнг/.test(r.join(' '))));
-    check('B: таблица оборудования содержит 12 позиций', !!equipTable && equipTable.rows.length === 12, equipTable ? `rows=${equipTable.rows.length}` : 'no table');
+    check('B: таблица оборудования содержит 4 доступные позиции', !!equipTable && equipTable.rows.length === 4, equipTable ? `rows=${equipTable.rows.length}` : 'no table');
     check('B: таблица кабеля содержит 2 позиции', !!cableTable && cableTable.rows.length === 2, cableTable ? `rows=${cableTable.rows.length}` : 'no table');
     const row4 = equipTable?.rows.find((r) => r[0] === '4');
     const plan4 = row4 ? parseRuNum(row4[5]) : null;
@@ -1018,19 +1018,14 @@ async function main() {
     check('B: поз.4 «По спец.» = 4', plan4 === 4, JSON.stringify(row4));
     check('B: поз.4 «Факт» = 4 (2 демо + 2 добавленных)', fact4 === 4, JSON.stringify(row4));
     check('B: поз.4 «Расхожд.» = 0 и подсвечено как норма', diff4 === 0 && /\bok\b/.test(pill4.cls), JSON.stringify(pill4));
-    const row10 = equipTable?.rows.find((r) => r[0] === '10');
-    const plan10 = row10 ? parseRuNum(row10[5]) : null;
-    const fact10 = row10 ? parseRuNum(row10[6]) : null;
-    const diff10 = row10 ? parseRuNum(row10[7]) : null;
-    const pill10 = await page.evaluate(() => {
-      const table = document.querySelectorAll('#tab-spec table')[0];
-      const row = table ? [...table.querySelectorAll('tbody tr')].find((tr) => tr.querySelector('td')?.textContent.trim() === '10') : null;
-      const pill = row?.querySelector('.pill');
-      return { cls: pill?.className || '', text: pill?.textContent.trim() || '' };
-    });
-    check('B: поз.10 «Маяк-24-3М»: план 8, факт 0, недостача подсвечена', plan10 === 8 && fact10 === 0 && diff10 === -8 && /\bwarn\b/.test(pill10.cls), JSON.stringify({ plan10, fact10, diff10, pill10 }));
-    const pos2Ok = equipTable?.rows.some((r) => /ДИП-34А-04/.test(r[2]));
-    check('B: в спецификации присутствует ДИП-34А-04 (строка из спецификации)', !!pos2Ok);
+    const allSpecText = specTables.map((t) => t.rows.map((r) => r.join(' ')).join(' ')).join(' ');
+    check(
+      'B: убранные позиции не показываются в спецификации (ДИП, ИПР, Маяк, Молния, КМ-О, АКБ, МПН)',
+      !/ДИП-34/.test(allSpecText) && !/ИПР/.test(allSpecText) && !/Маяк-24-3М/.test(allSpecText) && !/Молния/.test(allSpecText) && !/КМ-О/.test(allSpecText) && !/АКБ/.test(allSpecText) && !/\bМПН\b/.test(allSpecText),
+      allSpecText.slice(0, 120)
+    );
+    const pos1Ok = equipTable?.rows.some((r) => /Сириус/.test(r[2]));
+    check('B: в спецификации остался ППКУП «Сириус» (поз.1)', !!pos1Ok);
 
     const journalApi = await page.evaluate(() => {
       const p = window.BolidGrid.panels;
@@ -1284,7 +1279,7 @@ async function main() {
     const oobPayload = {
       project: {
         walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
-        devices: [{ id: 'd1', modelId: 'dip34a', wallId: 'w1', x: 99999, y: -50, rot: 45, tag: '1.1' }],
+        devices: [{ id: 'd1', modelId: 'sp2', wallId: 'w1', x: 99999, y: -50, rot: 45, tag: '1.1' }],
         channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 40, points: [[0, 0], [100, 0]] }],
         dimensions: [{ id: 'dim1', wallId: 'w1', a: [0, 0], b: [500, 0] }],
       },
