@@ -1,9 +1,13 @@
 /**
- * demo.js — демонстрационный проект по спецификации
- * «ДФО .... СПС.СОУЭ» (доп. офис Банка, г. Елизово, ул. Ленина, д.15а).
+ * demo.js — демонстрационный проект BolidGrid.
  *
- * Показывает: устройства БОЛИД из спецификации на стене, кабельные каналы,
- * автоматические опуски, объединение устройств в шлейфы и линии СОУЭ.
+ * Монтажный план по документации «ДФО .... СПС.СОУЭ» (доп. офис Банка,
+ * г. Елизово, ул. Ленина, д.15а): приборы БОЛИД на стене, короба DKC 100×40,
+ * объединение в шлейфы/линии и размерные линии (ширина стены, высота короба,
+ * высота установки прибора).
+ *
+ * Извещатели (ДИП-34А) и ручные извещатели (ИПР) в демо не используются:
+ * для монтажного плана нужны приборы, короба и размеры.
  */
 import { getModel } from './catalog.js';
 import { uid } from './util.js';
@@ -28,73 +32,65 @@ function device(modelId, wallId, x, y, tag, extra = {}) {
 }
 
 export function buildDemoProject() {
-  const wallA = { id: uid('wall'), name: 'Стена 1 — пожарный пост (ППКУП «Сириус»)', width: 4200, height: 2700 };
-  const wallB = { id: uid('wall'), name: 'Стена 2 — операционный зал (СПС и СОУЭ)', width: 6400, height: 2700 };
+  const wallA = { id: uid('wall'), name: 'Стена 1 — пожарный пост (приборы)', width: 4200, height: 2700 };
+  const wallB = { id: uid('wall'), name: 'Стена 2 — оповещение (СОУЭ)', width: 6400, height: 2700 };
 
   const devices = [];
 
-  /* ---------- стена 1: приборы ---------- */
-  const sirius = device('sirius', wallA.id, 260, 1250, '1.1', { note: 'ППКУП «Сириус», пожарный пост' });
-  const akb = device('akb', wallA.id, 260, 780, '1.2', { address: 'АКБ 12 В 18 Ач' });
-  const sp2_1 = device('sp2', wallA.id, 900, 1750, '1.3', { address: 'СП2 №1' });
-  const sp2_2 = device('sp2', wallA.id, 1140, 1750, '1.4', { address: 'СП2 №2' });
-  const sp2_3 = device('sp2', wallA.id, 1380, 1750, '1.5', { address: 'СП2 №3' });
-  const sp2_4 = device('sp2', wallA.id, 1620, 1750, '1.6', { address: 'СП2 №4' });
-  const sp4 = device('sp4_220', wallA.id, 1980, 1650, '1.7', { address: 'СП4/220, клапаны' });
-  const ar2 = device('ar2', wallA.id, 2340, 1780, '1.8', { address: 'АР2 исп.02' });
-  const mpn1 = device('mpn', wallA.id, 2620, 1860, '1.9');
-  const mpn2 = device('mpn', wallA.id, 2780, 1860, '1.10');
-  const kmo1 = device('kmo2k', wallA.id, 3300, 2350, '1.11', { note: 'огнестойкая коробка' });
-  const kmo2 = device('kmo2k', wallA.id, 3520, 2350, '1.12', { note: 'огнестойкая коробка' });
-  const exit1 = device('molnia_exit', wallA.id, 320, 2320, '1.13', { address: 'ВЫХОД, выход 1' });
-  const dir1 = device('molnia_dir', wallA.id, 620, 2320, '1.14', { address: 'направление движения' });
-  const mayak1 = device('mayak', wallA.id, 3660, 2380, '1.15', { address: 'звуковое оповещение' });
-  devices.push(sirius, akb, sp2_1, sp2_2, sp2_3, sp2_4, sp4, ar2, mpn1, mpn2, kmo1, kmo2, exit1, dir1, mayak1);
+  /* ---------- стена 1: приборы и оповещатели ---------- */
+  const sirius = device('sirius', wallA.id, 260, 1250, '1.1', { address: 'ППКУП «Сириус»' });
+  const akb = device('akb', wallA.id, 260, 760, '1.2', { address: 'АКБ 12 В 18 Ач' });
+  const sp2_1 = device('sp2', wallA.id, 900, 1750, '1.3', { address: 'СП2 №1 — световое оповещение' });
+  const sp2_2 = device('sp2', wallA.id, 1150, 1750, '1.4', { address: 'СП2 №2 — звуковое оповещение' });
+  const sp4 = device('sp4_220', wallA.id, 1450, 1650, '1.5', { address: 'СП4/220 — клапаны' });
+  const ar2 = device('ar2', wallA.id, 1800, 1780, '1.6', { address: 'АР2 исп.02' });
+  const mpn1 = device('mpn', wallA.id, 2050, 1860, '1.7');
+  const mpn2 = device('mpn', wallA.id, 2200, 1860, '1.8');
+  const kmo1 = device('kmo2k', wallA.id, 2600, 2350, '1.9', { note: 'огнестойкая коробка' });
+  const kmo2 = device('kmo2k', wallA.id, 2800, 2350, '1.10', { note: 'огнестойкая коробка' });
+  const exit1 = device('molnia_exit', wallA.id, 320, 2320, '1.11', { address: 'ВЫХОД' });
+  const dir1 = device('molnia_dir', wallA.id, 640, 2320, '1.12', { address: 'направление движения' });
+  const mayak1 = device('mayak', wallA.id, 3400, 2380, '1.13', { address: 'звуковое оповещение' });
+  const rip12 = device('rip12', wallA.id, 3600, 1700, '1.14', { address: 'РИП-12 исп.50' });
+  const bp12 = device('bp12', wallA.id, 3600, 1380, '1.15', { address: 'БП 12 В / 5 А' });
+  devices.push(sirius, akb, sp2_1, sp2_2, sp4, ar2, mpn1, mpn2, kmo1, kmo2, exit1, dir1, mayak1, rip12, bp12);
 
-  /* ---------- стена 2: извещатели и оповещатели ---------- */
-  const detectors = [];
-  for (let i = 1; i <= 8; i++) {
-    const d = device('dip34a', wallB.id, 380 + (i - 1) * 720, 2480, `2.${i}`, { address: `ДПЛС-1, адр. ${i}` });
-    detectors.push(d);
-    devices.push(d);
-  }
-  const ipr1 = device('ipr513', wallB.id, 300, 1450, '2.9', { address: 'ИПР у выхода' });
-  const ipr2 = device('ipr513', wallB.id, 6000, 1450, '2.10', { address: 'ИПР у выхода' });
-  const exit2 = device('molnia_exit', wallB.id, 240, 2250, '2.11');
-  const dir2 = device('molnia_dir', wallB.id, 1400, 2250, '2.12', { address: 'направление движения' });
-  const dir3 = device('molnia_dir', wallB.id, 4900, 2250, '2.13', { address: 'направление движения' });
-  const mayak2 = device('mayak', wallB.id, 2100, 2380, '2.14');
-  const mayak3 = device('mayak', wallB.id, 5600, 2380, '2.15');
-  devices.push(ipr1, ipr2, exit2, dir2, dir3, mayak2, mayak3);
+  /* ---------- стена 2: оповещение ---------- */
+  const exit2 = device('molnia_exit', wallB.id, 240, 2250, '2.1');
+  const dir2 = device('molnia_dir', wallB.id, 1400, 2250, '2.2', { address: 'направление движения' });
+  const dir3 = device('molnia_dir', wallB.id, 4900, 2250, '2.3', { address: 'направление движения' });
+  const mayak2 = device('mayak', wallB.id, 2100, 2380, '2.4');
+  const mayak3 = device('mayak', wallB.id, 5600, 2380, '2.5');
+  devices.push(exit2, dir2, dir3, mayak2, mayak3);
 
-  /* ---------- кабельные каналы ---------- */
+  /* ---------- кабельные трассы: короба DKC 100×40 (ширина 100 мм) ---------- */
   const channels = [
     {
       id: uid('ch'),
       wallId: wallA.id,
       kind: 'кабель-канал',
-      width: 40,
+      width: 100,
       points: [[120, 2580], [4080, 2580]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,75',
-      label: 'КК-1',
+      label: 'Короб DKC 100×40',
     },
     {
       id: uid('ch'),
       wallId: wallA.id,
       kind: 'кабель-канал',
-      width: 40,
+      width: 100,
       points: [[120, 2580], [120, 1000]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,75',
-      label: 'КК-1 (стояк)',
+      label: 'Короб DKC 100×40 (стояк)',
     },
     {
       id: uid('ch'),
       wallId: wallA.id,
-      kind: 'лоток',
-      width: 100,
-      points: [[3880, 2580], [3880, 1500]],
+      kind: 'короб-60',
+      width: 60,
+      points: [[3000, 2250], [4080, 2250]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,5',
-      label: 'Лоток к оповещателям',
+      label: 'Короб DKC 60×40',
     },
     {
       id: uid('ch'),
@@ -103,17 +99,29 @@ export function buildDemoProject() {
       width: 100,
       points: [[160, 2600], [6240, 2600]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,5',
-      label: 'Лоток Л-1 (СПС)',
+      label: 'Лоток Л-1',
     },
     {
       id: uid('ch'),
       wallId: wallB.id,
       kind: 'кабель-канал',
-      width: 40,
+      width: 100,
       points: [[6240, 2600], [6240, 1200]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,5',
-      label: 'КК-2 (СОУЭ)',
+      label: 'Короб DKC 100×40 (стояк)',
     },
+  ];
+
+  /* ---------- размерные линии ---------- */
+  const dimensions = [
+    // ширина стены 1
+    { id: uid('dim'), wallId: wallA.id, a: [0, 0], b: [4200, 0], text: '', offset: 70 },
+    // высота короба (стояк) на стене 1
+    { id: uid('dim'), wallId: wallA.id, a: [120, 0], b: [120, 2580], text: '', offset: 90 },
+    // высота установки прибора «Сириус» (низ 1250, верх 1605)
+    { id: uid('dim'), wallId: wallA.id, a: [260, 1605], b: [260, 0], text: 'высота установки', offset: 120 },
+    // ширина стены 2
+    { id: uid('dim'), wallId: wallB.id, a: [0, 0], b: [6400, 0], text: '', offset: 70 },
   ];
 
   /* ---------- объединения ---------- */
@@ -123,23 +131,23 @@ export function buildDemoProject() {
     kind: 'Питание',
     color: '#ef4444',
     note: 'АКБ + приборы',
-    deviceIds: [sirius.id, akb.id],
+    deviceIds: [sirius.id, akb.id, rip12.id, bp12.id],
   };
   const groupB = {
     id: uid('grp'),
-    name: 'ШС-1 (ДПЛС-1)',
+    name: 'ШС-1 (адресная линия)',
     kind: 'Адрес',
     color: '#8b5cf6',
-    note: 'адресная линия, 8 извещателей',
-    deviceIds: [...detectors.map((d) => d.id), ipr1.id],
+    note: 'приборы и расширитель',
+    deviceIds: [sp2_1.id, sp2_2.id, ar2.id],
   };
   const groupC = {
     id: uid('grp'),
-    name: 'ШС-2 (ДПЛС-2)',
-    kind: 'Адрес',
+    name: 'ШС-2',
+    kind: 'ШС',
     color: '#f59e0b',
-    note: 'ручной извещатель',
-    deviceIds: [ipr2.id, sp2_1.id, sp2_2.id],
+    note: 'управление клапанами и нагрузкой',
+    deviceIds: [sp4.id, mpn1.id, mpn2.id],
   };
   const groupD = {
     id: uid('grp'),
@@ -147,7 +155,7 @@ export function buildDemoProject() {
     kind: 'СОУЭ',
     color: '#22c55e',
     note: 'световые и звуковые оповещатели',
-    deviceIds: [exit1.id, dir1.id, exit2.id, dir2.id, dir3.id, mayak1.id, mayak2.id, mayak3.id],
+    deviceIds: [exit1.id, dir1.id, mayak1.id, exit2.id, dir2.id, dir3.id, mayak2.id, mayak3.id],
   };
   const groups = [groupA, groupB, groupC, groupD];
 
@@ -171,6 +179,7 @@ export function buildDemoProject() {
     devices,
     channels,
     groups,
+    dimensions,
   };
 
   return { project, activeWallId: wallA.id };

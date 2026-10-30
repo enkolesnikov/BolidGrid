@@ -294,6 +294,28 @@ if (chKind) {
   });
 }
 
+/* подписи на листе: нет / кратко (обозначение) / полные (обозначение + адрес) */
+function syncLabelsUI() {
+  const v = store.settings.labels || 'none';
+  for (const id of ['sel-labels', 'sel-labels-mobile']) {
+    const el = $(id);
+    if (el) el.value = v;
+  }
+}
+function setLabels(value) {
+  if (!['none', 'tag', 'full'].includes(value)) return;
+  store.settings.labels = value;
+  syncLabelsUI();
+  store.scheduleSave();
+  editor.render();
+  const names = { none: 'подписи скрыты', tag: 'краткие обозначения', full: 'полные подписи' };
+  panels.toast(`Подписи: ${names[value]}`);
+}
+for (const id of ['sel-labels', 'sel-labels-mobile']) {
+  const el = $(id);
+  if (el) el.addEventListener('change', () => setLabels(el.value));
+}
+
 /* доступность кнопок истории */
 function updateHistoryButtons() {
   const undo = document.querySelector('[data-action="undo"]');
@@ -382,6 +404,8 @@ window.addEventListener('keydown', (e) => {
     store.emit('tool');
   } else if (e.key === 'c' || e.key === 'C' || e.key === 'с' || e.key === 'С') {
     editor.setTool('channel');
+  } else if (e.key === 'm' || e.key === 'M' || e.key === 'ь' || e.key === 'Ь') {
+    editor.setTool('dimension');
   } else if (e.key === 'h' || e.key === 'H' || e.key === 'р' || e.key === 'Р') {
     editor.setTool('pan');
   } else if (e.key === '+' || e.key === '=') {
@@ -421,6 +445,7 @@ window.addEventListener('afterprint', () => {
   panels.updateToolButtons();
   updateHistoryButtons();
   renderMenuWalls();
+  syncLabelsUI();
   editor._hint();
   requestAnimationFrame(() => {
     editor.fit();

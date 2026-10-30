@@ -4,7 +4,7 @@
  * Проект целиком сериализуется в JSON: undo — это снимки проекта,
  * поэтому любые правки должны идти через begin()/commit() или act().
  */
-import { getModel, CHANNEL_KINDS, GROUP_COLORS } from './catalog.js';
+import { getModel, CHANNEL_KINDS, CHANNEL_KIND_IDS, GROUP_COLORS } from './catalog.js';
 import { uid, closestOnPolyline, polylineLength, clamp } from './util.js';
 
 export const LS_KEY = 'bolidgrid:project:v1';
@@ -27,6 +27,7 @@ export function createProject(meta = {}) {
     devices: [],
     channels: [],
     groups: [],
+    dimensions: [],
   };
 }
 
@@ -38,7 +39,7 @@ export class Store {
     this.selection = [];
     this.tool = 'select';
     this.armedModelId = null;
-    this.settings = { grid: 50, snap: true, showGrid: true, dropMax: 1200 };
+    this.settings = { grid: 50, snap: true, showGrid: true, dropMax: 1200, labels: 'none' };
     this._undo = [];
     this._redo = [];
     this._before = null;
@@ -242,6 +243,12 @@ export class Store {
       .map((s) => this.project.channels.find((c) => c.id === s.id))
       .filter(Boolean);
   }
+  selectedDimensions() {
+    return this.selection
+      .filter((s) => s.type === 'dimension')
+      .map((s) => this.project.dimensions.find((d) => d.id === s.id))
+      .filter(Boolean);
+  }
   selectedGroups() {
     return this.selection
       .filter((s) => s.type === 'group')
@@ -346,8 +353,10 @@ export class Store {
       const devIds = new Set(this.selection.filter((s) => s.type === 'device').map((s) => s.id));
       const chIds = new Set(this.selection.filter((s) => s.type === 'channel').map((s) => s.id));
       const grIds = new Set(this.selection.filter((s) => s.type === 'group').map((s) => s.id));
+      const dimIds = new Set(this.selection.filter((s) => s.type === 'dimension').map((s) => s.id));
       this.project.devices = this.project.devices.filter((d) => !devIds.has(d.id));
       this.project.channels = this.project.channels.filter((c) => !chIds.has(c.id));
+      this.project.dimensions = (this.project.dimensions || []).filter((d) => !dimIds.has(d.id));
       for (const g of this.project.groups) {
         if (grIds.has(g.id)) continue;
         g.deviceIds = g.deviceIds.filter((id) => !devIds.has(id));
@@ -389,6 +398,43 @@ export class Store {
     else {
       doIt();
       this.touch();
+    }
+  }
+
+  /* ---------- размерные линии ---------- */
+  getDimension(id) {
+    return (this.project.dimensions || []).find((d) => d.id === id);
+  }
+  addDimension(a, b, { wallId = this.activeWallId, text = '', offset = 60 } = {}) {
+    let dim;
+    this.act('размерная линия', () => {
+      dim = {
+        id: uid('dim'),
+        wallId,
+        a: [Math.round(a[0]), Math.round(a[1])],
+        b: [Math.round(b[0]), Math.round(b[1])],
+        text: text || '',
+        offset,
+      };
+      if (!Array.isArray(this.project.dimensions)) this.project.dimensions = [];
+      this.project.dimensions.push(dim);
+      this.selection = [{ type: 'dimension', id: dim.id }];
+    });
+    this.emit('selection');
+    return dim;
+  }
+  updateDimension(id, patch, { commit = true } = {}) {
+    const doIt = () => {
+      const d = this.getDimension(id);
+      if (!d) return;
+      Object.assign(d, patch);
+      if (Array.isArray(d.a)) d.a = d.a.map((v) => Math.round(+v || 0));
+      if (Array.isArray(d.b)) d.b = d.b.map((v) => Math.round(+v || 0));
+    };
+    if (commit) this.act('изменение размера', doIt);
+    else {
+      doIt();
+      this.emit('live');
     }
   }
 
@@ -536,7 +582,13 @@ export class Store {
     try {
       localStorage.setItem(
         LS_KEY,
-        JSON.stringify({ schema: SCHEMA_VERSION, savedAt: new Date().toISOString(), project: this.project, activeWallId: this.activeWallId })
+        JSON.stringify({
+          schema: SCHEMA_VERSION,
+          savedAt: new Date().toISOString(),
+          project: this.project,
+          activeWallId: this.activeWallId,
+          settings: this.settings,
+        })
       );
       return true;
     } catch (err) {
@@ -551,6 +603,10 @@ export class Store {
       const data = JSON.parse(raw);
       if (!data?.project) return false;
       this.replaceProject(data.project, { activeWallId: data.activeWallId });
+      if (data.settings && typeof data.settings === 'object') {
+        this.settings = { ...this.settings, ...data.settings };
+        this.settings.labels = ['none', 'tag', 'full'].includes(this.settings.labels) ? this.settings.labels : 'none';
+      }
       return true;
     } catch (err) {
       console.warn('[store] не удалось загрузить проект', err);
@@ -609,12 +665,26 @@ export function sanitizeProject(raw) {
     .map((c) => ({
       id: String(c.id || uid('ch')),
       wallId: c.wallId,
-      kind: ['кабель-канал', 'лоток', 'гофра', 'труба'].includes(c.kind) ? c.kind : 'кабель-канал',
+      kind: CHANNEL_KIND_IDS.includes(c.kind) ? c.kind : CHANNEL_KIND_IDS[0],
       width: clamp(+c.width || 40, 5, 600),
       points: c.points.map((p) => [ +p[0] || 0, +p[1] || 0 ]),
       cableModelId: String(c.cableModelId ?? ''),
       label: String(c.label ?? ''),
     }));
+  const dimensions = (Array.isArray(raw.dimensions) ? raw.dimensions : [])
+    .filter((d) => d && wallIds.has(d.wallId) && Array.isArray(d.a) && Array.isArray(d.b))
+    .map((d) => {
+      const wall = wallById.get(d.wallId);
+      const fix = (pt) => [clamp(Math.round(+pt[0] || 0), 0, wall.width), clamp(Math.round(+pt[1] || 0), 0, wall.height)];
+      return {
+        id: String(d.id || uid('dim')),
+        wallId: d.wallId,
+        a: fix(d.a),
+        b: fix(d.b),
+        text: String(d.text ?? ''),
+        offset: clamp(+d.offset || 60, 0, 600),
+      };
+    });
   const groups = (Array.isArray(raw.groups) ? raw.groups : [])
     .filter((g) => g && Array.isArray(g.deviceIds))
     .map((g, i) => ({
@@ -635,5 +705,6 @@ export function sanitizeProject(raw) {
     devices,
     channels,
     groups,
+    dimensions,
   };
 }

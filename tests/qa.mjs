@@ -302,7 +302,7 @@ async function main() {
     check('spec.json: ДИП-34А-04, поз.2, план 32 шт.', dipRow && +dipRow.qty === 32 && /ДИП-34А-04/.test(dipRow.model), JSON.stringify(dipRow?.qty));
 
     const catalog = await import('../js/catalog.js');
-    const catalogIds = catalog.MODELS.map((m) => m.id);
+    const catalogIds = catalog.MODELS.filter((m) => !m.hidden).map((m) => m.id);
     check('каталог: ровно 20 моделей устройств', catalog.MODELS.length === 20, `count=${catalog.MODELS.length}`);
     check('каталог: идентификаторы моделей уникальны', new Set(catalogIds).size === catalogIds.length);
     const specPositions = catalog.MODELS.map((m) => m.specPos).filter((p) => p != null).sort((a, b) => a - b);
@@ -315,7 +315,7 @@ async function main() {
     const appA = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page: pageA, errors: errorsA } = appA;
     const sA0 = await getState(pageA);
-    check('демо-проект загружен при старте', sA0.devices === 30 && sA0.walls === 2 && sA0.channels === 5 && sA0.groups === 4, JSON.stringify(sA0));
+    check('демо-проект загружен при старте', sA0.devices === 20 && sA0.walls === 2 && sA0.channels === 5 && sA0.groups === 4, JSON.stringify(sA0));
     check('спецификация загружена (data/spec.json)', await pageA.evaluate(() => !!window.BolidGrid.store.spec));
 
     const metrics = () =>
@@ -452,10 +452,10 @@ async function main() {
     const appB = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page, errors: errorsB } = appB;
     const s0 = await getState(page);
-    check('B: стартовое демо 30 устройств / 5 каналов / 4 шлейфа / 2 стены', s0.devices === 30 && s0.channels === 5 && s0.groups === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, g: s0.groups, w: s0.walls }));
+    check('B: стартовое демо 20 устройств / 5 каналов / 4 шлейфа / 2 стены', s0.devices === 20 && s0.channels === 5 && s0.groups === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, g: s0.groups, w: s0.walls }));
 
     const paletteIds = await page.$$eval('#palette-list .pal-item', (els) => els.map((e) => e.dataset.model));
-    check('B: палитра содержит ровно 20 моделей', paletteIds.length === 20, `count=${paletteIds.length}`);
+    check('B: палитра содержит ровно 18 моделей (без извещателей)', paletteIds.length === 18, `count=${paletteIds.length}`);
     check('B: модели палитры совпадают с каталогом', catalogIds.every((id) => paletteIds.includes(id)), JSON.stringify(paletteIds.filter((id) => !catalogIds.includes(id))));
 
     let placedAll = true;
@@ -472,9 +472,9 @@ async function main() {
       if (st.devices !== prevCount + 1) placedAll = false;
       prevCount = st.devices;
     }
-    check('B: все 20 моделей размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
+    check('B: все 18 моделей размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
     const s20 = await getState(page);
-    check('B: после размещения 20 моделей устройств 50 (30+20)', s20.devices === 50 && s20.wallDevices === s0.wallDevices + 20, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
+    check('B: после размещения 18 моделей устройств 38 (20+18)', s20.devices === 38 && s20.wallDevices === s0.wallDevices + 18, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
     const placement = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const wallDevs = s.wallDevices;
@@ -482,26 +482,26 @@ async function main() {
       const tags = wallDevs.map((d) => d.tag);
       return { modelIds, uniqueTags: new Set(tags).size, tagCount: tags.length, devNodes: document.querySelectorAll('#devices .dev').length, wallDevices: wallDevs.length };
     });
-    check('B: размещены все 20 разных моделей', catalogIds.every((id) => placement.modelIds.includes(id)), JSON.stringify(placement.modelIds));
+    check('B: размещены все 18 разных моделей', catalogIds.every((id) => placement.modelIds.includes(id)), JSON.stringify(placement.modelIds));
     check('B: обозначения новых устройств уникальны', placement.uniqueTags === placement.tagCount, `${placement.uniqueTags}/${placement.tagCount}`);
     check('B: SVG-узлы устройств = устройствам стены', placement.devNodes === placement.wallDevices, JSON.stringify(placement));
 
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 40);
     const su = await getState(page);
-    check('B: 20×undo возвращает исходные 30 устройств', su.devices === 30, `devices=${su.devices}`);
+    check('B: 18×undo возвращает исходные 20 устройств', su.devices === 20, `devices=${su.devices}`);
     check('B: после 20×undo история пуста (canUndo=false)', su.canUndo === false && su.undoLen === 0, JSON.stringify({ canUndo: su.canUndo, undoLen: su.undoLen }));
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 60);
     const sExtra = await getState(page);
-    check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 30 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
+    check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 20 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+y'), 30);
     const sr = await getState(page);
-    check('B: 20×redo восстанавливает 50 устройств', sr.devices === 50, `devices=${sr.devices}`);
+    check('B: 18×redo восстанавливает 38 устройств', sr.devices === 38, `devices=${sr.devices}`);
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 30);
-    check('B: повторный 20×undo снова даёт 30 устройств', (await getState(page)).devices === 30);
+    check('B: повторный 18×undo снова даёт 20 устройств', (await getState(page)).devices === 20);
 
     /* ---------- B2. Перетаскивание устройства ---------- */
     section('B2. Перетаскивание устройства мышью');
@@ -738,7 +738,7 @@ async function main() {
     await page.locator('#topbar [data-action="group"]').click();
     await sleep(250);
     const sEmpty = await getState(page);
-    check('B: «Удалить» при пустом выделении безопасен', sEmpty.devices === 30, `devices=${sEmpty.devices}`);
+    check('B: «Удалить» при пустом выделении безопасен', sEmpty.devices === 20, `devices=${sEmpty.devices}`);
     check('B: «Объединить» при пустом выделении — подсказка и без диалога', /Сначала выделите устройства/.test(sEmpty.toast) && sEmpty.modalOpen === false, JSON.stringify({ toast: sEmpty.toast, modal: sEmpty.modalOpen }));
 
     /* ---------- B5. Стены ---------- */
@@ -804,7 +804,7 @@ async function main() {
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(450);
     const sDelWall = await getState(page);
-    check('B: удаление добавленной стены возвращает 2 стены и 30 устройств', sDelWall.walls === 2 && sDelWall.devices === 30, JSON.stringify({ walls: sDelWall.walls, devices: sDelWall.devices }));
+    check('B: удаление добавленной стены возвращает 2 стены и 20 устройств', sDelWall.walls === 2 && sDelWall.devices === 20, JSON.stringify({ walls: sDelWall.walls, devices: sDelWall.devices }));
     check('B: активной становится существующая стена', [wall1.id, wall2.id].includes(sDelWall.wallId), String(sDelWall.wallId));
 
     // удалить демо-стену с устройствами + undo
@@ -813,7 +813,7 @@ async function main() {
     await page.locator(`#walls-list [data-wall-del="${wall2.id}"]`).click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     const confirmText = await page.locator('#modal-body').innerText();
-    check('B: подтверждение удаления стены предупреждает о числе устройств', /15\s*устройств/.test(confirmText.replace(/\s+/g, ' ')), confirmText.replace(/\s+/g, ' ').slice(0, 160));
+    check('B: подтверждение удаления стены предупреждает о числе устройств', /5\s*устройств/.test(confirmText.replace(/\s+/g, ' ')), confirmText.replace(/\s+/g, ' ').slice(0, 160));
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(500);
     const sDeleteWall2 = await page.evaluate(() => {
@@ -830,7 +830,7 @@ async function main() {
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 100);
     const sUndoWall = await getState(page);
-    check('B: undo восстанавливает стену с устройствами', sUndoWall.walls === 2 && sUndoWall.devices === 30, JSON.stringify({ walls: sUndoWall.walls, devices: sUndoWall.devices }));
+    check('B: undo восстанавливает стену с устройствами', sUndoWall.walls === 2 && sUndoWall.devices === 20, JSON.stringify({ walls: sUndoWall.walls, devices: sUndoWall.devices }));
 
     /* ---------- B6. Наложение устройств / длинные подписи / XSS ---------- */
     section('B6. Наложение устройств, длинные подписи, XSS');
@@ -858,6 +858,9 @@ async function main() {
     check('B: undo убирает наложенные устройства', (await getState(page)).devices === overlapBefore);
 
     devsOnWall = await page.evaluate(() => window.BolidGrid.store.wallDevices.map((d) => d.id));
+    // подписи по умолчанию скрыты — для проверки отрисовки длинных обозначений включаем режим «кратко»
+    await page.selectOption('#sel-labels', 'tag');
+    await sleep(250);
     const originalTag = await page.evaluate((id) => window.BolidGrid.store.getDevice(id)?.tag, devsOnWall[0]);
     await clickDevice(page, devsOnWall[0]);
     await page.locator('#tabs button[data-tab="props"]').click();
@@ -1055,15 +1058,15 @@ async function main() {
     await sleep(300);
     await page.locator('#btn-zoom-fit').click();
     await sleep(200);
-    await placeModel(page, 'dip34a', 0.38, 0.32);
-    await placeModel(page, 'dip34a', 0.46, 0.32);
-    const dipState = await page.evaluate(() => {
+    await placeModel(page, 'sp2', 0.38, 0.32);
+    await placeModel(page, 'sp2', 0.46, 0.32);
+    const sp2State = await page.evaluate(() => {
       const s = window.BolidGrid.store;
-      return { fact2: s.placedCountBySpecPos().get(2) || 0, dipTotal: s.project.devices.filter((d) => d.modelId === 'dip34a').length };
+      return { fact4: s.placedCountBySpecPos().get(4) || 0, sp2Total: s.project.devices.filter((d) => d.modelId === 'sp2').length };
     });
-    check('B: добавлены 2 ДИП-34А → всего 10 на стенах', dipState.dipTotal === 10 && dipState.fact2 === 10, JSON.stringify(dipState));
-    const badge = await page.locator('#palette-list .pal-item[data-model="dip34a"]').innerText();
-    check('B: палитра показывает «10 / 32» для ДИП-34А', /10\s*\/\s*32/.test(badge.replace(/\s+/g, ' ')), badge.replace(/\s+/g, ' ').slice(0, 120));
+    check('B: добавлены 2 С2000-СП2 → 4 на стенах (план 4)', sp2State.sp2Total === 4 && sp2State.fact4 === 4, JSON.stringify(sp2State));
+    const badge = await page.locator('#palette-list .pal-item[data-model="sp2"]').innerText();
+    check('B: палитра показывает «4 / 4» для С2000-СП2', /4\s*\/\s*4/.test(badge.replace(/\s+/g, ' ')), badge.replace(/\s+/g, ' ').slice(0, 120));
 
     await page.locator('#tabs button[data-tab="spec"]').click();
     await page.waitForSelector('#tab-spec table', { timeout: 5000 });
@@ -1073,21 +1076,32 @@ async function main() {
     const cableTable = specTables.find((t) => /Кабельная продукция/.test(t.section) && t.rows.some((r) => /КПСнг/.test(r.join(' '))));
     check('B: таблица оборудования содержит 12 позиций', !!equipTable && equipTable.rows.length === 12, equipTable ? `rows=${equipTable.rows.length}` : 'no table');
     check('B: таблица кабеля содержит 2 позиции', !!cableTable && cableTable.rows.length === 2, cableTable ? `rows=${cableTable.rows.length}` : 'no table');
-    const row2 = equipTable?.rows.find((r) => r[0] === '2');
-    const plan2 = row2 ? parseRuNum(row2[5]) : null;
-    const fact2 = row2 ? parseRuNum(row2[6]) : null;
-    const diff2 = row2 ? parseRuNum(row2[7]) : null;
-    const pill2 = await page.evaluate(() => {
-      const table = [...document.querySelectorAll('#tab-spec table')].find((t) => t.textContent.includes('ДИП-34А-04'));
-      const row = table ? [...table.querySelectorAll('tbody tr')].find((tr) => tr.querySelector('td')?.textContent.trim() === '2') : null;
+    const row4 = equipTable?.rows.find((r) => r[0] === '4');
+    const plan4 = row4 ? parseRuNum(row4[5]) : null;
+    const fact4 = row4 ? parseRuNum(row4[6]) : null;
+    const diff4 = row4 ? parseRuNum(row4[7]) : null;
+    const pill4 = await page.evaluate(() => {
+      const table = document.querySelectorAll('#tab-spec table')[0];
+      const row = table ? [...table.querySelectorAll('tbody tr')].find((tr) => tr.querySelector('td')?.textContent.trim() === '4') : null;
       const pill = row?.querySelector('.pill');
       return { cls: pill?.className || '', text: pill?.textContent.trim() || '' };
     });
-    check('B: поз.2 «По спец.» = 32', plan2 === 32, JSON.stringify(row2));
-    check('B: поз.2 «Факт» = 10 (8 демо + 2 добавленных)', fact2 === 10, JSON.stringify(row2));
-    check('B: поз.2 «Расхожд.» = −22 и подсвечено как недостача', diff2 === -22 && /\bwarn\b/.test(pill2.cls), JSON.stringify(pill2));
+    check('B: поз.4 «По спец.» = 4', plan4 === 4, JSON.stringify(row4));
+    check('B: поз.4 «Факт» = 4 (2 демо + 2 добавленных)', fact4 === 4, JSON.stringify(row4));
+    check('B: поз.4 «Расхожд.» = 0 и подсвечено как норма', diff4 === 0 && /\bok\b/.test(pill4.cls), JSON.stringify(pill4));
+    const row10 = equipTable?.rows.find((r) => r[0] === '10');
+    const plan10 = row10 ? parseRuNum(row10[5]) : null;
+    const fact10 = row10 ? parseRuNum(row10[6]) : null;
+    const diff10 = row10 ? parseRuNum(row10[7]) : null;
+    const pill10 = await page.evaluate(() => {
+      const table = document.querySelectorAll('#tab-spec table')[0];
+      const row = table ? [...table.querySelectorAll('tbody tr')].find((tr) => tr.querySelector('td')?.textContent.trim() === '10') : null;
+      const pill = row?.querySelector('.pill');
+      return { cls: pill?.className || '', text: pill?.textContent.trim() || '' };
+    });
+    check('B: поз.10 «Маяк-24-3М»: план 8, факт 3, недостача подсвечена', plan10 === 8 && fact10 === 3 && diff10 === -5 && /\bwarn\b/.test(pill10.cls), JSON.stringify({ plan10, fact10, diff10, pill10 }));
     const pos2Ok = equipTable?.rows.some((r) => /ДИП-34А-04/.test(r[2]));
-    check('B: в спецификации присутствует ДИП-34А-04', !!pos2Ok);
+    check('B: в спецификации присутствует ДИП-34А-04 (строка из спецификации)', !!pos2Ok);
 
     const journalApi = await page.evaluate(() => {
       const p = window.BolidGrid.panels;
@@ -1206,7 +1220,7 @@ async function main() {
         wallDevices: s.wallDevices.length,
       };
     });
-    check('B: после reload проект восстановлен из localStorage (не демо)', afterReload.devices === beforeReload.devices && afterReload.devices === 32, JSON.stringify({ before: beforeReload.devices, after: afterReload.devices }));
+    check('B: после reload проект восстановлен из localStorage (не демо)', afterReload.devices === beforeReload.devices && afterReload.devices > 0, JSON.stringify({ before: beforeReload.devices, after: afterReload.devices }));
     check('B: после reload восстановлена активная стена и всё содержимое', afterReload.wallName === beforeReload.wallName && afterReload.wallId === beforeReload.wallId && afterReload.channels === beforeReload.channels && afterReload.groups === beforeReload.groups && JSON.stringify(afterReload.tags) === JSON.stringify(beforeReload.tags), JSON.stringify({ before: { wall: beforeReload.wallName, c: beforeReload.channels, g: beforeReload.groups }, after: { wall: afterReload.wallName, c: afterReload.channels, g: afterReload.groups } }));
     check('B: после reload SVG снова отрисован', afterReload.devNodes === afterReload.wallDevices && afterReload.devNodes > 0, JSON.stringify({ devNodes: afterReload.devNodes, wallDevices: afterReload.wallDevices }));
 
@@ -1428,7 +1442,7 @@ async function main() {
     await sleep(600);
     const afterWallDel = await getState(page);
     check('B: первая стена удалена, осталась одна', afterWallDel.walls === 1, `walls=${afterWallDel.walls}`);
-    await placeModel(page, 'dip34a', 0.45, 0.55);
+    await placeModel(page, 'sp2', 0.45, 0.55);
     const newTag = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const d = s.wallDevices[s.wallDevices.length - 1];

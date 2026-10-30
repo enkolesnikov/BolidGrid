@@ -162,25 +162,25 @@ const M = (o) => ({
 export const MODELS = [
   /* --- позиции спецификации 1–12 --- */
   M({
-    id: 'sirius', specPos: 1, kind: 'ppkup', symbol: 'sirius', w: 340, h: 380,
+    id: 'sirius', specPos: 1, kind: 'ppkup', symbol: 'sirius', w: 300, h: 355,
     name: 'ППКУП «Сириус»', model: 'ППКУП «Сириус»',
     full: 'Прибор приёмно-контрольный и управления пожарный «Сириус»',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'dip34a', specPos: 2, kind: 'detektor_dym', symbol: 'dip', w: 100, h: 100,
+    id: 'dip34a', specPos: 2, kind: 'detektor_dym', symbol: 'dip', w: 100, h: 100, hidden: true,
     name: 'ДИП-34А-04', model: 'ДИП-34А-04',
     full: 'Извещатель пожарный дымовой оптико-электронный адресный ДИП-34А-04',
     vendor: 'ЗАО НВП «БОЛИД»', mount: 'ceiling',
   }),
   M({
-    id: 'ipr513', specPos: 3, kind: 'detektor_ruchn', symbol: 'ipr', w: 95, h: 95,
+    id: 'ipr513', specPos: 3, kind: 'detektor_ruchn', symbol: 'ipr', w: 95, h: 95, hidden: true,
     name: 'ИПР-513-3АМ исп.01', model: 'ИПР-513-3АМ исп.01',
     full: 'Извещатель пожарный ручной адресный ИПР-513-3АМ исп.01',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'sp2', specPos: 4, kind: 'blok_sp', symbol: 'block', tagText: 'СП2', terminals: 4, w: 160, h: 110,
+    id: 'sp2', specPos: 4, kind: 'blok_sp', symbol: 'block', tagText: 'СП2', terminals: 4, w: 156, h: 107,
     name: 'С2000-СП2', model: 'С2000-СП2',
     full: 'Блок сигнально-пусковой адресный С2000-СП2',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -192,13 +192,13 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'ar2', specPos: 6, kind: 'rasshiritel', symbol: 'block', tagText: 'АР2', terminals: 2, w: 160, h: 110,
+    id: 'ar2', specPos: 6, kind: 'rasshiritel', symbol: 'block', tagText: 'АР2', terminals: 2, w: 156, h: 107,
     name: 'С2000-АР2 исп.02', model: 'С2000-АР2 исп.02',
     full: 'Адресный расширитель С2000-АР2 исп.02',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'mpn', specPos: 7, kind: 'modul', symbol: 'block', tagText: 'МПН', terminals: 2, w: 110, h: 70,
+    id: 'mpn', specPos: 7, kind: 'modul', symbol: 'block', tagText: 'МПН', terminals: 2, w: 100, h: 70,
     name: 'МПН', model: 'МПН',
     full: 'Модуль подключения нагрузки МПН',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -216,19 +216,19 @@ export const MODELS = [
     vendor: 'ИП Раченков А. В.',
   }),
   M({
-    id: 'mayak', specPos: 10, kind: 'opoveshchatel_zvuk', symbol: 'mayak', w: 100, h: 120,
+    id: 'mayak', specPos: 10, kind: 'opoveshchatel_zvuk', symbol: 'mayak', w: 95, h: 115,
     name: 'Маяк-24-3М', model: 'Маяк-24-3М',
     full: 'Оповещатель охранно-пожарный звуковой Маяк-24-3М',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'kmo2k', specPos: 11, kind: 'korobka', symbol: 'korobka', w: 110, h: 110,
+    id: 'kmo2k', specPos: 11, kind: 'korobka', symbol: 'korobka', w: 100, h: 100,
     name: 'КМ-О(2К) исп.1', model: 'КМ-О(2К) исп.1',
     full: 'Коробка монтажная огнестойкая КМ-О(2К) исп.1',
     vendor: 'ЛТ «ГЕФЕСТ»',
   }),
   M({
-    id: 'akb', specPos: 12, kind: 'bp', symbol: 'akb', w: 180, h: 170,
+    id: 'akb', specPos: 12, kind: 'bp', symbol: 'akb', w: 181, h: 167,
     name: 'АКБ 12 В, 18 Ач', model: 'Delta HRL 12-18',
     full: 'Аккумуляторная батарея 12 В, 18 Ач Delta HRL 12-18',
     vendor: 'Delta',
@@ -236,31 +236,31 @@ export const MODELS = [
 
   /* --- дополнительные устройства вне спецификации --- */
   M({
-    id: 'kdl', kind: 'rasshiritel', symbol: 'block', tagText: 'КДЛ', terminals: 2, w: 160, h: 110,
+    id: 'kdl', kind: 'rasshiritel', symbol: 'block', tagText: 'КДЛ', terminals: 2, w: 156, h: 107,
     name: 'С2000-КДЛ', model: 'С2000-КДЛ',
     full: 'Контроллер двухпроводной линии С2000-КДЛ',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'sp1', kind: 'blok_sp', symbol: 'block', tagText: 'СП1', terminals: 2, w: 160, h: 110,
+    id: 'sp1', kind: 'blok_sp', symbol: 'block', tagText: 'СП1', terminals: 2, w: 156, h: 107,
     name: 'С2000-СП1 исп.02', model: 'С2000-СП1 исп.02',
     full: 'Блок сигнально-пусковой адресный С2000-СП1 исп.02',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 's2000m', kind: 'ppkup', symbol: 's2000m', w: 300, h: 340,
+    id: 's2000m', kind: 'ppkup', symbol: 's2000m', w: 245, h: 300,
     name: 'С2000М', model: 'С2000М',
     full: 'Пульт контроля и управления С2000М',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'rip12', kind: 'bp', symbol: 'rip', w: 250, h: 200,
+    id: 'rip12', kind: 'bp', symbol: 'rip', w: 255, h: 190,
     name: 'РИП-12 исп.50', model: 'РИП-12 исп.50',
     full: 'Резервированный источник питания РИП-12 исп.50',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'bp12', kind: 'bp', symbol: 'rip', w: 250, h: 200,
+    id: 'bp12', kind: 'bp', symbol: 'rip', w: 250, h: 190,
     name: 'Блок питания 12 В / 5 А', model: 'БП 12/5',
     full: 'Блок питания резервированный 12 В, 5 А',
     vendor: '—',
@@ -303,11 +303,16 @@ export function modelsByKind() {
 
 /** Типы кабельных каналов / трасс. */
 export const CHANNEL_KINDS = [
-  { id: 'кабель-канал', label: 'Кабель-канал ПВХ', width: 40, color: '#94a3b8' },
-  { id: 'лоток', label: 'Лоток металлический', width: 100, color: '#7c8fa8' },
-  { id: 'гофра', label: 'Гофротруба', width: 20, color: '#a3b2c4' },
-  { id: 'труба', label: 'Труба стальная', width: 25, color: '#8b9bb0' },
+  { id: 'кабель-канал', label: 'Короб DKC 100×40', width: 100, color: '#94a3b8' },
+  { id: 'короб-60', label: 'Короб DKC 60×40', width: 60, color: '#9aa9bb' },
+  { id: 'короб-40', label: 'Короб DKC 40×25', width: 40, color: '#a3b2c4' },
+  { id: 'лоток', label: 'Лоток металлический 100', width: 100, color: '#7c8fa8' },
+  { id: 'гофра', label: 'Гофротруба Ø20', width: 20, color: '#a3b2c4' },
+  { id: 'труба', label: 'Труба стальная Ø25', width: 25, color: '#8b9bb0' },
 ];
+
+/** Допустимые id типов трасс (для валидации импорта). */
+export const CHANNEL_KIND_IDS = CHANNEL_KINDS.map((k) => k.id);
 
 /** Виды объединений устройств. */
 export const GROUP_KINDS = [

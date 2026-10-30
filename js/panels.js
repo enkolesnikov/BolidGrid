@@ -217,6 +217,7 @@ export class Panels {
     const q = this.search;
     const groups = new Map();
     for (const model of MODELS) {
+      if (model.hidden) continue;
       if (q) {
         const hay = `${model.name} ${model.model} ${model.full} ${model.vendor}`.toLowerCase();
         if (!hay.includes(q)) continue;
@@ -268,10 +269,12 @@ export class Panels {
     const devices = this.store.selectedDevices();
     const channels = this.store.selectedChannels();
     const groups = this.store.selectedGroups();
-    if (devices.length === 1 && !channels.length && !groups.length) box.innerHTML = this._deviceInspector(devices[0]);
-    else if (channels.length === 1 && !devices.length && !groups.length) box.innerHTML = this._channelInspector(channels[0]);
-    else if (groups.length === 1 && !devices.length && !channels.length) box.innerHTML = this._groupInspector(groups[0]);
-    else box.innerHTML = this._multiInspector(devices, channels, groups);
+    const dims = this.store.selectedDimensions();
+    if (devices.length === 1 && !channels.length && !groups.length && !dims.length) box.innerHTML = this._deviceInspector(devices[0]);
+    else if (channels.length === 1 && !devices.length && !groups.length && !dims.length) box.innerHTML = this._channelInspector(channels[0]);
+    else if (groups.length === 1 && !devices.length && !channels.length && !dims.length) box.innerHTML = this._groupInspector(groups[0]);
+    else if (dims.length === 1 && !devices.length && !channels.length && !groups.length) box.innerHTML = this._dimensionInspector(dims[0]);
+    else box.innerHTML = this._multiInspector(devices, channels, groups, dims);
     this._wireInspector(box);
   }
 
@@ -285,6 +288,7 @@ export class Panels {
         <dt>Опусков</dt><dd>${stats.drops} · ${m(stats.dropLen)}</dd>
         <dt>Объединений</dt><dd>${stats.groups}</dd>
         <dt>Кабеля всего</dt><dd>${m(stats.channelLen + stats.dropLen)}</dd>
+        <dt>Размерных линий</dt><dd>${stats.dims}</dd>
       </dl>
       <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.6">
         Выберите устройство или канал на стене, чтобы изменить параметры.
@@ -305,6 +309,7 @@ export class Panels {
       drops: drops.length,
       dropLen,
       groups: st.project.groups.length,
+      dims: (st.project.dimensions || []).length,
     };
   }
 
@@ -394,13 +399,35 @@ export class Panels {
       </div>`;
   }
 
-  _multiInspector(devices, channels, groups) {
-    const total = devices.length + channels.length + groups.length;
+  _dimensionInspector(dim) {
+    const len = Math.hypot(dim.b[0] - dim.a[0], dim.b[1] - dim.a[1]);
+    return `<div class="prop-title"><span class="badge">размер</span><h4>${escAll(fmt0(Math.round(len)))} мм</h4></div>
+      <div class="form">
+        <div class="row2">
+          <label>X₁, мм<input data-f="ax" type="number" step="10" value="${Math.round(dim.a[0])}"></label>
+          <label>H₁, мм<input data-f="ay" type="number" step="10" value="${Math.round(dim.a[1])}"></label>
+        </div>
+        <div class="row2">
+          <label>X₂, мм<input data-f="bx" type="number" step="10" value="${Math.round(dim.b[0])}"></label>
+          <label>H₂, мм<input data-f="by" type="number" step="10" value="${Math.round(dim.b[1])}"></label>
+        </div>
+        <label>Текст на линии<input data-f="text" value="${escAll(dim.text || '')}" placeholder="${escAll(fmt0(Math.round(len)))} мм (авто)"></label>
+        <label>Отступ линии, мм<input data-f="offset" type="number" step="10" value="${dim.offset ?? 60}"></label>
+        <div class="hintline">Пусто в тексте — размер показывается автоматически. Концы линии тянутся за маркеры на стене.</div>
+        <div class="section-actions">
+          <button class="btn tiny" data-act="del">Удалить размер</button>
+        </div>
+      </div>`;
+  }
+
+  _multiInspector(devices, channels, groups, dims = []) {
+    const total = devices.length + channels.length + groups.length + dims.length;
     return `<div class="prop-title"><h4>Выбрано: ${total}</h4></div>
       <dl class="kv">
         <dt>Устройств</dt><dd>${devices.length}</dd>
         <dt>Каналов</dt><dd>${channels.length}</dd>
         <dt>Объединений</dt><dd>${groups.length}</dd>
+        <dt>Размеров</dt><dd>${dims.length}</dd>
       </dl>
       <div class="form">
         <div class="hintline">Shift+клик — добавить/убрать из выделения, рамка — групповое выделение.</div>
@@ -447,6 +474,28 @@ export class Panels {
           st.updateChannel(channel.id, { [f]: v });
         });
       });
+    }
+    if (st.selectedDimensions().length === 1) {
+      const dim = st.selectedDimensions()[0];
+      box.querySelectorAll('[data-f]').forEach((inp) => {
+        inp.addEventListener('change', () => {
+          const f = inp.dataset.f;
+          const patch = {};
+          if (f === 'ax') patch.a = [parseFloat(inp.value) || 0, dim.a[1]];
+          else if (f === 'ay') patch.a = [dim.a[0], parseFloat(inp.value) || 0];
+          else if (f === 'bx') patch.b = [parseFloat(inp.value) || 0, dim.b[1]];
+          else if (f === 'by') patch.b = [dim.b[0], parseFloat(inp.value) || 0];
+          else if (f === 'offset') patch.offset = parseFloat(inp.value) || 0;
+          else patch[f] = inp.value;
+          st.updateDimension(dim.id, patch);
+        });
+      });
+      for (const btn of box.querySelectorAll('[data-act]')) {
+        btn.addEventListener('click', () => {
+          if (btn.dataset.act === 'del') st.removeSelection();
+        });
+      }
+      return;
     }
     if (group) {
       box.querySelectorAll('[data-f]').forEach((inp) => {

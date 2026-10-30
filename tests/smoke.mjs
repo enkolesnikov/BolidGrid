@@ -77,11 +77,11 @@ async function main() {
 
     const paletteCount = await page.locator('#palette-list .pal-item').count();
     check('палитра устройств содержит модели', paletteCount >= 18, `items=${paletteCount}`);
-    const specBadge = await page.locator('#palette-list .pal-item[data-model="dip34a"]').innerText();
-    check('в палитре показано «размещено / по спецификации»', /\/\s*32/.test(specBadge), specBadge.replace(/\s+/g, ' '));
+    const specBadge = await page.locator('#palette-list .pal-item[data-model="sp2"]').innerText();
+    check('в палитре показано «размещено / по спецификации»', /\/\s*4/.test(specBadge), specBadge.replace(/\s+/g, ' '));
 
     // --- размещение устройства из палитры ---
-    await page.locator('#palette-list .pal-item[data-model="ipr513"]').click();
+    await page.locator('#palette-list .pal-item[data-model="mayak"]').click();
     const toolAfterArm = (await state()).tool;
     check('выбор модели в палитре включает режим размещения', toolAfterArm === 'place', toolAfterArm);
     const wallBox = await page.locator('#wall').boundingBox();
@@ -101,6 +101,49 @@ async function main() {
     await sleep(250);
     const afterChannel = await state();
     check('рисование канала: ломаная из 3 точек добавляет канал', afterChannel.channels === s0.channels + 1, `${s0.channels} → ${afterChannel.channels}`);
+
+    // --- короб DKC 100×40: ширина трассы по умолчанию ---
+    const channelWidth = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      return { kind: ch.kind, width: ch.width };
+    });
+    check('канал создаётся как короб шириной 100 мм', channelWidth.width === 100, JSON.stringify(channelWidth));
+
+    // --- размерные линии ---
+    const dimsBefore = await page.evaluate(() => (window.BolidGrid.store.project.dimensions || []).length);
+    await page.locator('#stage-toolbar [data-tool="dimension"]').click();
+    check('инструмент «Размер» включается', (await state()).tool === 'dimension');
+    await page.mouse.click(wallBox.x + wallBox.width * 0.25, wallBox.y + wallBox.height * 0.8);
+    await sleep(120);
+    await page.mouse.click(wallBox.x + wallBox.width * 0.7, wallBox.y + wallBox.height * 0.8);
+    await sleep(250);
+    const dimState = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const dim = s.project.dimensions[s.project.dimensions.length - 1];
+      const text = document.querySelector('#dimensions .dim-text')?.textContent || '';
+      const arrows = document.querySelectorAll('#dimensions .dim-arrow').length;
+      const domDims = document.querySelectorAll('#dimensions .dimension').length;
+      return { count: s.project.dimensions.length, domDims, text, arrows, len: dim ? Math.round(Math.hypot(dim.b[0] - dim.a[0], dim.b[1] - dim.a[1])) : 0 };
+    });
+    check(
+      'размерная линия создаётся и подписывается длиной',
+      dimState.count === dimsBefore + 1 && /\d/.test(dimState.text) && /мм/.test(dimState.text),
+      JSON.stringify({ before: dimsBefore, ...dimState })
+    );
+    check('у каждой размерной линии две стрелки', dimState.domDims > 0 && dimState.arrows === dimState.domDims * 2, `arrows=${dimState.arrows}, domDims=${dimState.domDims}`);
+    await page.keyboard.press('Delete');
+    await sleep(250);
+    check('размерная линия удаляется', (await page.evaluate(() => window.BolidGrid.store.project.dimensions.length)) === dimsBefore);
+
+    // --- подписи: режим «нет» скрывает обозначения ---
+    await page.selectOption('#sel-labels', 'none');
+    await sleep(300);
+    const labelsOff = await page.evaluate(() => ({ tags: document.querySelectorAll('#devices .dev-tag').length, mode: window.BolidGrid.store.settings.labels }));
+    check('режим «Подписи: нет» убирает обозначения с листа', labelsOff.tags === 0 && labelsOff.mode === 'none', JSON.stringify(labelsOff));
+    await page.selectOption('#sel-labels', 'tag');
+    await sleep(300);
+    check('режим «кратко» возвращает обозначения', (await page.evaluate(() => document.querySelectorAll('#devices .dev-tag').length)) > 0);
 
     // --- выделение устройства и инспектор ---
     await page.locator('.dev-hit').first().click();

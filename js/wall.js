@@ -8,7 +8,7 @@
  * панорама, измерение. Опуски к каналам считаются автоматически.
  */
 import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS } from './catalog.js';
-import { clamp, snapTo, fmt, m, mm, esc, pathD, closestOnPolyline, orthoPath, uid } from './util.js';
+import { clamp, snapTo, fmt, fmt0, m, mm, esc, pathD, closestOnPolyline, closestOnSegment, orthoPath, uid } from './util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const SHEET_PAD = 260; // отступ листа в мм для подписей
@@ -25,7 +25,7 @@ export class WallEditor {
     this.band = null;
     this.pan = null;
     this.channelDraft = null;
-    this.measure = null;
+    this.dimDraft = null;
     this.hover = null;
     this.pointers = new Map();
     this.pinch = null;
@@ -315,7 +315,7 @@ export class WallEditor {
   }
   cancelDraft() {
     this.channelDraft = null;
-    this.measure = null;
+    this.dimDraft = null;
     if (!['select', 'pan'].includes(this.store.tool)) this.store.tool = 'select';
     this.store.armedModelId = null;
     this.store.emit('tool');
@@ -354,6 +354,8 @@ export class WallEditor {
     if (e.button !== 0) return;
     let info = this._targetInfo(e);
     const floor = this.screenToFloor(e);
+    if (!info) info = this._findNearDimension(floor, 14);
+    if (!info) info = this._findNearHandle(floor, 14);
     if (!info && e.pointerType !== 'mouse') info = this._findNearTarget(floor, 30);
     this.pressStart = { x: e.clientX, y: e.clientY };
 
@@ -361,10 +363,20 @@ export class WallEditor {
       this._placeAt(floor);
       return;
     }
-    if (this.tool === 'measure') {
-      if (!this.measure) this.measure = { a: floor, b: floor, locked: false };
-      else if (!this.measure.locked) this.measure.locked = true;
-      else this.measure = { a: floor, b: floor, locked: false };
+    if (this.tool === 'dimension') {
+      const p = this._dimPoint(floor);
+      if (!this.dimDraft) {
+        this.dimDraft = { a: p, b: p };
+      } else {
+        const a = this.dimDraft.a;
+        if (Math.hypot(p[0] - a[0], p[1] - a[1]) > 20) {
+          this.store.addDimension(a, p);
+          this.dimDraft = null;
+          this.store.tool = 'select';
+          this.store.emit('tool');
+          this._hint();
+        }
+      }
       this.render();
       return;
     }
@@ -381,6 +393,12 @@ export class WallEditor {
         this._capture(e);
         return;
       }
+      if (info.type === 'dim-handle') {
+        this.drag = { mode: 'dim', dimId: info.id, index: info.index };
+        this.store.begin();
+        this._capture(e);
+        return;
+      }
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       if (info.type === 'group') {
         this.store.select([{ type: 'group', id: info.id }], additive);
@@ -388,6 +406,11 @@ export class WallEditor {
       }
       if (info.type === 'channel') {
         this.store.select([{ type: 'channel', id: info.id }], additive);
+        this.render();
+        return;
+      }
+      if (info.type === 'dimension') {
+        this.store.select([{ type: 'dimension', id: info.id }], additive);
         this.render();
         return;
       }
@@ -491,6 +514,18 @@ export class WallEditor {
       }
       return;
     }
+    if (this.drag?.mode === 'dim') {
+      const dim = this.store.getDimension(this.drag.dimId);
+      if (dim) {
+        const pt = [
+          Math.round(clamp(this.snap(floor[0]), 0, this.wall.width)),
+          Math.round(clamp(this.snap(floor[1]), 0, this.wall.height)),
+        ];
+        this.store.updateDimension(dim.id, { [this.drag.index === 0 ? 'a' : 'b']: pt }, { commit: false });
+        this.scheduleRender();
+      }
+      return;
+    }
     if (this.band) {
       this.band.b = floor;
       this.scheduleRender();
@@ -501,8 +536,8 @@ export class WallEditor {
       this.scheduleRender();
       return;
     }
-    if (this.tool === 'measure' && this.measure && !this.measure.locked) {
-      this.measure.b = floor;
+    if (this.tool === 'dimension' && this.dimDraft) {
+      this.dimDraft.b = this._dimPoint(floor);
       this.scheduleRender();
       return;
     }
@@ -551,6 +586,12 @@ export class WallEditor {
     if (this.drag?.mode === 'vertex') {
       this.drag = null;
       this.store.commit('изменение канала');
+      this.render();
+      return;
+    }
+    if (this.drag?.mode === 'dim') {
+      this.drag = null;
+      this.store.commit('изменение размера');
       this.render();
       return;
     }
@@ -697,8 +738,8 @@ export class WallEditor {
   }
 
   /* ================= измерение ================= */
-  finishMeasure() {
-    this.measure = null;
+  finishDimension() {
+    this.dimDraft = null;
     this.render();
   }
 
@@ -719,6 +760,7 @@ export class WallEditor {
     parts.push(`<g id="channels">${this._channels()}</g>`);
     parts.push(`<g id="drops">${this._drops(drops)}</g>`);
     parts.push(`<g id="groups">${this._groupLinks()}</g>`);
+    parts.push(`<g id="dimensions">${this._dimensions()}</g>`);
     parts.push(`<g id="devices">${this._devices()}</g>`);
     parts.push(`<g id="overlay">${this._overlay()}</g>`);
     this.svg.innerHTML = parts.join('');
@@ -786,12 +828,7 @@ export class WallEditor {
         <path class="channel-inner" d="${d}" stroke-width="${Math.max(sw * 0.26, 2)}"/>
         <text class="channel-label" x="${mid[0] + 40}" y="${this.toScreenY(mid[1]) - 40}">${esc(label)} · ${m(this.store.channelLength(ch))}</text>
       </g>`;
-      if (sel) {
-        for (let i = 0; i < ch.points.length; i++) {
-          const [x, y] = ch.points[i];
-          out += `<circle class="channel-vertex" data-type="vertex" data-id="${ch.id}" data-index="${i}" cx="${x}" cy="${this.toScreenY(y)}" r="${Math.max(14, 6 / this.pxPerMm)}" stroke-width="${Math.max(2, 1.4 / this.pxPerMm)}"/>`;
-        }
-      }
+
     }
     return out;
   }
@@ -850,6 +887,10 @@ export class WallEditor {
 
   _devices() {
     const wallH = this.wall.height;
+    const ppm = this.pxPerMm || 0.2;
+    const labelMode = this.store.settings.labels || 'none';
+    const showTag = labelMode !== 'none' && ppm >= 0.075;
+    const showSub = labelMode === 'full' && ppm >= 0.13;
     let out = '';
     for (const d of this.store.wallDevices) {
       const model = getModel(d.modelId);
@@ -865,10 +906,31 @@ export class WallEditor {
           <rect class="dev-hit" x="${-16}" y="${-16}" width="${model.w + 32}" height="${model.h + 32}" rx="10"/>
           <rect class="sel-frame" x="${-22}" y="${-22}" width="${model.w + 44}" height="${model.h + 44}" rx="12" vector-effect="non-scaling-stroke"/>
         </g>
-        ${loopColor ? `<rect x="${model.w - 46}" y="${-28}" width="72" height="16" rx="4" fill="${loopColor}" vector-effect="non-scaling-stroke"/>` : ''}
-        <text class="dev-tag" x="${model.w / 2}" y="${model.h + 120}">${esc(label)}</text>
-        ${d.address ? `<text class="dev-sub" x="${model.w / 2}" y="${model.h + 200}">${esc(d.address)}</text>` : ''}
+        ${loopColor ? `<rect x="${model.w - 40}" y="${-24}" width="58" height="12" rx="3" fill="${loopColor}" vector-effect="non-scaling-stroke"/>` : ''}
+        ${showTag ? `<text class="dev-tag" x="${model.w / 2}" y="${model.h + 90}">${esc(label)}</text>` : ''}
+        ${showSub ? `<text class="dev-sub" x="${model.w / 2}" y="${model.h + 152}">${esc(d.address || model.model)}</text>` : ''}
       </g>`;
+    }
+    return out;
+  }
+
+  /** маркеры вершин каналов и концов размеров — поверх остальных слоёв */
+  _handles() {
+    const ppm = this.pxPerMm || 0.2;
+    let out = '';
+    for (const ch of this.store.wallChannels) {
+      if (!this.store.isSelected('channel', ch.id)) continue;
+      for (let i = 0; i < ch.points.length; i++) {
+        const [x, y] = ch.points[i];
+        out += `<circle class="channel-vertex" data-type="vertex" data-id="${ch.id}" data-index="${i}" cx="${x}" cy="${this.toScreenY(y)}" r="${Math.max(16, 7 / ppm)}" stroke-width="${Math.max(2, 1.4 / ppm)}"/>`;
+      }
+    }
+    for (const dim of this.store.project.dimensions || []) {
+      if (dim.wallId !== this.wall.id || !this.store.isSelected('dimension', dim.id)) continue;
+      const g = this._dimGeom(dim);
+      const r = Math.max(18, 8 / ppm);
+      out += `<circle class="dim-handle" data-type="dim-handle" data-id="${dim.id}" data-index="0" cx="${g.sa[0]}" cy="${g.sa[1]}" r="${r}"/>`;
+      out += `<circle class="dim-handle" data-type="dim-handle" data-id="${dim.id}" data-index="1" cx="${g.sb[0]}" cy="${g.sb[1]}" r="${r}"/>`;
     }
     return out;
   }
@@ -892,11 +954,15 @@ export class WallEditor {
         out += `<circle cx="${p[0]}" cy="${this.toScreenY(p[1])}" r="${Math.max(16, 6 / this.pxPerMm)}" fill="#0ea5e9" stroke="#fff" stroke-width="${Math.max(3, 1.5 / this.pxPerMm)}"/>`;
       }
     }
-    if (this.measure) {
-      const a = this.measure.a, b = this.measure.b;
+    out += this._handles();
+    if (this.dimDraft) {
+      const a = this.dimDraft.a;
+      const b = this.dimDraft.b;
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      out += `<line class="measure-line" x1="${a[0]}" y1="${this.toScreenY(a[1])}" x2="${b[0]}" y2="${this.toScreenY(b[1])}" vector-effect="non-scaling-stroke"/>
-        <text class="measure-label" x="${(a[0] + b[0]) / 2 + 40}" y="${this.toScreenY((a[1] + b[1]) / 2) - 40}">${m(len)} (${mm(len)})</text>`;
+      const sa = [a[0], this.toScreenY(a[1])];
+      const sb = [b[0], this.toScreenY(b[1])];
+      out += `<line class="dim-preview" x1="${sa[0]}" y1="${sa[1]}" x2="${sb[0]}" y2="${sb[1]}" vector-effect="non-scaling-stroke"/>
+        <text class="dim-text preview" x="${(sa[0] + sb[0]) / 2}" y="${(sa[1] + sb[1]) / 2 - 30}">${len > 5 ? this._fmtDim(len) : ''}</text>`;
     }
     if (this.tool === 'place' && this.store.armedModelId && this.pointer) {
       const model = getModel(this.store.armedModelId);
@@ -946,10 +1012,10 @@ export class WallEditor {
       text = coarse
         ? `Размещение: <b>${esc(modelName)}</b> — тапните по стене.`
         : `Размещение: <b>${esc(modelName)}</b> — кликните на стене. <kbd>Esc</kbd> — отмена`;
-    } else if (tool === 'measure') {
+    } else if (tool === 'dimension') {
       text = coarse
-        ? 'Измерение: тап — точка A, второй тап — точка B.'
-        : 'Измерение: клик — точка A, второй клик — точка B. <kbd>Esc</kbd> — выход.';
+        ? 'Размер: тап — первая точка, второй тап — вторая. Размер подпишется автоматически.'
+        : 'Размер: клик — первая точка, второй клик — вторая (по горизонтали/вертикали). <kbd>Esc</kbd> — выход.';
     } else if (tool === 'pan') {
       text = coarse ? 'Панорама: тяните лист одним пальцем, масштаб — двумя.' : 'Панорама: тяните мышью. Колесо — масштаб.';
     } else if (coarse) {
@@ -961,6 +1027,119 @@ export class WallEditor {
     if (text === this._hintCache) return;
     this._hintCache = text;
     this.hintEl.innerHTML = text;
+  }
+
+
+  /* ================= размерные линии ================= */
+  _fmtDim(lenMm) {
+    return `${fmt0(Math.round(lenMm))} мм`;
+  }
+  /** точка размера: привязка к сетке и выравнивание по горизонтали/вертикали */
+  _dimPoint(floor) {
+    let [x, y] = [this.snap(floor[0]), this.snap(floor[1])];
+    const a = this.dimDraft?.a;
+    if (a) {
+      if (Math.abs(x - a[0]) >= Math.abs(y - a[1])) y = a[1];
+      else x = a[0];
+    }
+    return [clamp(x, 0, this.wall.width), clamp(y, 0, this.wall.height)];
+  }
+  _dimensions() {
+    const dims = (this.store.project.dimensions || []).filter((d) => d.wallId === this.wall.id);
+    return dims.map((dim) => this._dimensionMarkup(dim, this.store.isSelected('dimension', dim.id))).join('');
+  }
+  _dimGeom(dim) {
+    const sa = [dim.a[0], this.toScreenY(dim.a[1])];
+    const sb = [dim.b[0], this.toScreenY(dim.b[1])];
+    const dx = sb[0] - sa[0];
+    const dy = sb[1] - sa[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    let nx = -uy;
+    let ny = ux;
+    if (ny > 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    const off = dim.offset ?? 60;
+    return {
+      sa,
+      sb,
+      a2: [sa[0] + nx * off, sa[1] + ny * off],
+      b2: [sb[0] + nx * off, sb[1] + ny * off],
+      ux,
+      uy,
+      nx,
+      ny,
+      len,
+    };
+  }
+  /** ближайшая ручка (вершина выделенного канала или конец размера) в пределах maxPx */
+  _findNearHandle(floor, maxPx = 14) {
+    const tol = maxPx / (this.pxPerMm || 0.2);
+    const pt = [floor[0], this.toScreenY(floor[1])];
+    let best = null;
+    for (const ch of this.store.wallChannels) {
+      if (!this.store.isSelected('channel', ch.id)) continue;
+      ch.points.forEach(([x, y], i) => {
+        const d = Math.hypot(pt[0] - x, pt[1] - this.toScreenY(y));
+        if (d <= tol && (!best || d < best.dist)) best = { type: 'vertex', id: ch.id, index: i, dist: d };
+      });
+    }
+    for (const dim of this.store.project.dimensions || []) {
+      if (dim.wallId !== this.wall.id || !this.store.isSelected('dimension', dim.id)) continue;
+      const g = this._dimGeom(dim);
+      [g.sa, g.sb].forEach((p, i) => {
+        const d = Math.hypot(pt[0] - p[0], pt[1] - p[1]);
+        if (d <= tol && (!best || d < best.dist)) best = { type: 'dim-handle', id: dim.id, index: i, dist: d };
+      });
+    }
+    return best;
+  }
+
+  /** ближайшая размерная линия в пределах maxPx — выделение без перехвата кликов каналами */
+  _findNearDimension(floor, maxPx = 14) {
+    const tol = maxPx / (this.pxPerMm || 0.2);
+    const screenPt = [floor[0], this.toScreenY(floor[1])];
+    let best = null;
+    for (const dim of (this.store.project.dimensions || []).filter((d) => d.wallId === this.wall.id)) {
+      const g = this._dimGeom(dim);
+      const d = Math.min(closestOnSegment(screenPt, g.a2, g.b2).dist, closestOnSegment(screenPt, g.sa, g.sb).dist);
+      if (d <= tol && (!best || d < best.dist)) best = { type: 'dimension', id: dim.id, dist: d };
+    }
+    return best;
+  }
+  _dimensionMarkup(dim, sel) {
+    const g = this._dimGeom(dim);
+    const { a2, b2, ux, uy, nx, ny } = g;
+    const angle = (Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) * 180) / Math.PI;
+    const textAngle = angle > 90 || angle < -90 ? angle + 180 : angle;
+    const mid = [(a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2];
+    const lenMm = Math.hypot(dim.b[0] - dim.a[0], dim.b[1] - dim.a[1]);
+    const label = (dim.text || '').trim() || this._fmtDim(lenMm);
+
+    const al = 70; // длина стрелки, мм
+    const aw = 22; // полуширина стрелки, мм
+    const arrow = (tip, dirX, dirY) => {
+      const baseX = tip[0] + dirX * al;
+      const baseY = tip[1] + dirY * al;
+      const px = -dirY * aw;
+      const py = dirX * aw;
+      return `<polygon points="${tip[0]},${tip[1]} ${baseX + px},${baseY + py} ${baseX - px},${baseY - py}" class="dim-arrow"/>`;
+    };
+    const sw = Math.max(2.5, 1.6 / (this.pxPerMm || 0.2));
+
+    let out = `<g class="dimension${sel ? ' sel' : ''}" data-type="dimension" data-id="${dim.id}">
+      <line class="dim-ext" x1="${g.sa[0]}" y1="${g.sa[1]}" x2="${a2[0]}" y2="${a2[1]}" vector-effect="non-scaling-stroke"/>
+      <line class="dim-ext" x1="${g.sb[0]}" y1="${g.sb[1]}" x2="${b2[0]}" y2="${b2[1]}" vector-effect="non-scaling-stroke"/>
+      <line class="dim-line" x1="${a2[0]}" y1="${a2[1]}" x2="${b2[0]}" y2="${b2[1]}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>
+      ${arrow(a2, ux, uy)}
+      ${arrow(b2, -ux, -uy)}
+      <text class="dim-text" transform="translate(${mid[0] - nx * 45} ${mid[1] - ny * 45}) rotate(${textAngle})" text-anchor="middle">${esc(label)}</text>
+    </g>`;
+
+    return out;
   }
 
 
@@ -1018,13 +1197,16 @@ export class WallEditor {
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
-    for (const g of walker.querySelectorAll('.band, .armed-ghost, .measure-line, .measure-label, .channel-vertex')) g.remove();
+    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .dim-handle, .sel-frame')) g.remove();
+    for (const g of walker.querySelectorAll('.sel')) g.classList.remove('sel');
     const meta = this.store.project.meta || {};
     const title = `${meta.name || 'BolidGrid'} — ${wall.name}`;
     const sub = [meta.doc, meta.address, meta.contractor].filter(Boolean).join(' · ');
     const footer = `<g class="export-footer"><text x="${bbox.x + 40}" y="${bbox.y + bbox.h - 90}" font-size="70" fill="#475569">${esc(title)}</text><text x="${bbox.x + 40}" y="${bbox.y + bbox.h - 30}" font-size="52" fill="#64748b">${esc(sub)}</text></g>`;
     walker.innerHTML += footer;
-    return { svg: walker.outerHTML, bbox };
+    // outerHTML — HTML-сериализация: &nbsp; и прочие сущности невалидны в XML.
+    const svg = typeof XMLSerializer !== 'undefined' ? new XMLSerializer().serializeToString(walker) : walker.outerHTML;
+    return { svg, bbox };
   }
 
   async exportSVGFile() {
@@ -1035,7 +1217,7 @@ export class WallEditor {
     } catch {
       css = '';
     }
-    const inner = svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+    const inner = svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').replace(/&nbsp;/g, '&#160;');
     const width = Math.round(bbox.w / 4);
     const height = Math.round(bbox.h / 4);
     return `<?xml version="1.0" encoding="UTF-8"?>

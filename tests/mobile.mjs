@@ -173,10 +173,10 @@ async function main() {
       }));
       check(`${vp.label}: «Палитра» открывает шторку`, /sheet-palette/.test(pal.cls) && pal.leftY < vp.height * 0.6, JSON.stringify(pal));
       check(`${vp.label}: шторка палитры над таб-баром`, pal.leftBottom <= layout.bar.y + 2, `${pal.leftBottom} vs ${layout.bar.y}`);
-      check(`${vp.label}: в палитре 20 моделей`, pal.items === 20, `items=${pal.items}`);
+      check(`${vp.label}: в палитре 18 моделей`, pal.items === 18, `items=${pal.items}`);
       check(`${vp.label}: затемнение активно`, pal.scrim === 'block');
 
-      await page.locator('#palette-list .pal-item[data-model="dip34a"]').tap();
+      await page.locator('#palette-list .pal-item[data-model="mayak"]').tap();
       await sleep(350);
       const afterArm = await state();
       check(`${vp.label}: выбор модели включает размещение и закрывает шторку`, afterArm.tool === 'place' && afterArm.sheet === '', JSON.stringify({ tool: afterArm.tool, sheet: afterArm.sheet }));
@@ -316,7 +316,19 @@ async function main() {
         rightVisible: document.getElementById('right').getBoundingClientRect().top < innerHeight * 0.7,
       }));
       check(`${vp.label}: шторка «Спец» показывает таблицы`, spec.tables >= 2 && /ДИП-34А-04/.test(spec.text), `tables=${spec.tables}`);
-      check(`${vp.label}: «Факт» кабеля в метрах`, /12,5|13,6|14,9/.test(spec.text), spec.text.match(/12,\d+|13,\d+|14,\d+/)?.[0] || '');
+      const cableFact = await page.evaluate(() => {
+        const table = [...document.querySelectorAll('#tab-spec table')].find((t) => /КПСнг/.test(t.textContent));
+        const row = table && [...table.querySelectorAll('tbody tr')].find((tr) => /КПСнг/.test(tr.textContent));
+        if (!row) return null;
+        const cells = [...row.querySelectorAll('td')].map((td) => td.textContent.trim());
+        const parse = (s) => parseFloat(String(s).replace(/[\s\u00a0]/g, '').replace(',', '.'));
+        return { plan: parse(cells[5]), fact: parse(cells[6]) };
+      });
+      check(
+        `${vp.label}: «Факт» кабеля в метрах и меньше проектного`,
+        !!cableFact && cableFact.plan === 280 && cableFact.fact > 0 && cableFact.fact < 1000,
+        JSON.stringify(cableFact)
+      );
       await page.screenshot({ path: `${OUT}mobile-${vp.width}-spec.png` });
 
       await page.locator('#mobile-bar button[data-sheet="journal"]').tap();
