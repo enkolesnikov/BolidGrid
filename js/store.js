@@ -4,7 +4,7 @@
  * Проект целиком сериализуется в JSON: undo — это снимки проекта,
  * поэтому любые правки должны идти через begin()/commit() или act().
  */
-import { getModel, CHANNEL_KINDS, CHANNEL_KIND_IDS, GROUP_COLORS } from './catalog.js';
+import { getModel, CHANNEL_KINDS, CHANNEL_KIND_IDS } from './catalog.js';
 import { uid, closestOnPolyline, polylineLength, clamp } from './util.js';
 
 export const LS_KEY = 'bolidgrid:project:v1';
@@ -26,7 +26,6 @@ export function createProject(meta = {}) {
     ],
     devices: [],
     channels: [],
-    groups: [],
     dimensions: [],
   };
 }
@@ -39,7 +38,7 @@ export class Store {
     this.selection = [];
     this.tool = 'select';
     this.armedModelId = null;
-    this.settings = { grid: 50, snap: true, showGrid: true, dropMax: 1200, labels: 'none' };
+    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none' };
     this._undo = [];
     this._redo = [];
     this._before = null;
@@ -189,7 +188,7 @@ export class Store {
       this.project.walls = this.project.walls.filter((w) => w.id !== id);
       this.project.devices = this.project.devices.filter((d) => d.wallId !== id);
       this.project.channels = this.project.channels.filter((c) => c.wallId !== id);
-      this.syncGroups();
+      this.project.dimensions = (this.project.dimensions || []).filter((d) => d.wallId !== id);
       this.ensureActiveWall();
       this.clearSelection();
     });
@@ -249,12 +248,6 @@ export class Store {
       .map((s) => this.project.dimensions.find((d) => d.id === s.id))
       .filter(Boolean);
   }
-  selectedGroups() {
-    return this.selection
-      .filter((s) => s.type === 'group')
-      .map((s) => this.project.groups.find((g) => g.id === s.id))
-      .filter(Boolean);
-  }
 
   /* ---------- устройства ---------- */
   getDevice(id) {
@@ -262,9 +255,6 @@ export class Store {
   }
   getChannel(id) {
     return this.project.channels.find((c) => c.id === id);
-  }
-  getGroup(id) {
-    return this.project.groups.find((g) => g.id === id);
   }
   nextTag(wallId = this.activeWallId) {
     const wallNo = Math.max(1, this.project.walls.findIndex((w) => w.id === wallId) + 1);
@@ -299,7 +289,6 @@ export class Store {
         tag: this.nextTag(wall.id),
         address: '',
         note: '',
-        groupIds: [],
         ...patch,
       };
       this.project.devices.push(dev);
@@ -336,7 +325,6 @@ export class Store {
           x: d.x + 150,
           y: d.y - 150,
           tag: this.nextTag(d.wallId),
-          groupIds: [],
         };
         this.project.devices.push(copy);
         created.push(copy);
@@ -352,27 +340,17 @@ export class Store {
     this.act('удаление', () => {
       const devIds = new Set(this.selection.filter((s) => s.type === 'device').map((s) => s.id));
       const chIds = new Set(this.selection.filter((s) => s.type === 'channel').map((s) => s.id));
-      const grIds = new Set(this.selection.filter((s) => s.type === 'group').map((s) => s.id));
       const dimIds = new Set(this.selection.filter((s) => s.type === 'dimension').map((s) => s.id));
       this.project.devices = this.project.devices.filter((d) => !devIds.has(d.id));
       this.project.channels = this.project.channels.filter((c) => !chIds.has(c.id));
       this.project.dimensions = (this.project.dimensions || []).filter((d) => !dimIds.has(d.id));
-      for (const g of this.project.groups) {
-        if (grIds.has(g.id)) continue;
-        g.deviceIds = g.deviceIds.filter((id) => !devIds.has(id));
-      }
-      this.project.groups = this.project.groups.filter((g) => !grIds.has(g.id));
-      for (const d of this.project.devices) {
-        d.groupIds = (d.groupIds || []).filter((id) => !grIds.has(id));
-      }
-      this.syncGroups();
       this.clearSelection();
     });
     return removed;
   }
 
   /* ---------- кабель-каналы ---------- */
-  addChannel(points, { kind = 'кабель-канал', wallId = this.activeWallId, width = null, cableModelId = '', label = '' } = {}) {
+  addChannel(points, { kind = 'кабель-канал', wallId = this.activeWallId, width = null, cableModelId = '', color = '', label = '' } = {}) {
     const def = CHANNEL_KINDS.find((k) => k.id === kind) || CHANNEL_KINDS[0];
     let ch;
     this.act('кабельный канал', () => {
@@ -383,7 +361,7 @@ export class Store {
         width: width ?? def.width,
         points: points.map(([x, y]) => [Math.round(x), Math.round(y)]),
         cableModelId,
-        label,
+        color,
       };
       this.project.channels.push(ch);
     });
@@ -438,112 +416,7 @@ export class Store {
     }
   }
 
-  /* ---------- объединения (шлейфы/линии) ---------- */
-  createGroup({ name, kind = 'ШС', color = null, deviceIds = [], note = '' } = {}) {
-    let group;
-    this.act('объединение устройств', () => {
-      group = {
-        id: uid('grp'),
-        name: name || `Шлейф ${this.project.groups.length + 1}`,
-        kind,
-        color: color || GROUP_COLORS[this.project.groups.length % GROUP_COLORS.length],
-        note,
-        deviceIds: deviceIds.filter((id) => this.getDevice(id)),
-      };
-      this.project.groups.push(group);
-      for (const d of this.project.devices) {
-        if (group.deviceIds.includes(d.id)) {
-          d.groupIds = [...new Set([...(d.groupIds || []), group.id])];
-        }
-      }
-      this.selection = [{ type: 'group', id: group.id }];
-    });
-    this.emit('selection');
-    return group;
-  }
-  updateGroup(id, patch, { commit = true } = {}) {
-    const doIt = () => {
-      const g = this.getGroup(id);
-      if (!g) return;
-      Object.assign(g, patch);
-      // синхронизировать членство устройств
-      if (Array.isArray(patch.deviceIds)) {
-        const ids = new Set(patch.deviceIds.filter((i) => this.getDevice(i)));
-        g.deviceIds = [...ids];
-        for (const d of this.project.devices) {
-          const has = (d.groupIds || []).includes(id);
-          const want = ids.has(d.id);
-          if (want && !has) d.groupIds = [...(d.groupIds || []), id];
-          if (!want && has) d.groupIds = d.groupIds.filter((x) => x !== id);
-        }
-      }
-    };
-    if (commit) this.act('изменение объединения', doIt);
-    else {
-      doIt();
-      this.touch();
-    }
-  }
-  removeGroup(id) {
-    this.act('удаление объединения', () => {
-      this.project.groups = this.project.groups.filter((g) => g.id !== id);
-      for (const d of this.project.devices) d.groupIds = (d.groupIds || []).filter((g) => g !== id);
-      this.selection = this.selection.filter((s) => !(s.type === 'group' && s.id === id));
-    });
-  }
-  addDevicesToGroup(groupId, deviceIds) {
-    const g = this.getGroup(groupId);
-    if (!g) return;
-    this.updateGroup(groupId, { deviceIds: [...new Set([...g.deviceIds, ...deviceIds])] });
-  }
-  removeDevicesFromGroup(groupId, deviceIds) {
-    const g = this.getGroup(groupId);
-    if (!g) return;
-    const rm = new Set(deviceIds);
-    this.updateGroup(groupId, { deviceIds: g.deviceIds.filter((id) => !rm.has(id)) });
-  }
-  /** Убрать из групп устройства/каналы, которых больше нет. */
-  syncGroups() {
-    for (const g of this.project.groups) {
-      g.deviceIds = (g.deviceIds || []).filter((id) => this.getDevice(id));
-    }
-    for (const d of this.project.devices) {
-      d.groupIds = (d.groupIds || []).filter((id) => this.getGroup(id));
-    }
-  }
-
   /* ---------- вычисления ---------- */
-  /**
-   * Опуски: для каждого устройства — ближайший кабель-канал на той же стене.
-   * Возвращает [{deviceId, channelId, point:[x,y], length}]
-   */
-  computeDrops(wallId = null) {
-    const byWall = new Map();
-    for (const c of this.project.channels) {
-      if (!byWall.has(c.wallId)) byWall.set(c.wallId, []);
-      byWall.get(c.wallId).push(c);
-    }
-    const drops = [];
-    for (const d of this.project.devices) {
-      if (d.noDrop) continue;
-      if (wallId && d.wallId !== wallId) continue;
-      const channels = byWall.get(d.wallId) || [];
-      if (!channels.length) continue;
-      const m = getModel(d.modelId);
-      const anchor = [d.x + m.w / 2, d.y];
-      let best = null;
-      for (const c of channels) {
-        if (!c.points || c.points.length < 2) continue;
-        const r = closestOnPolyline(anchor, c.points);
-        if (!r) continue;
-        if (!best || r.dist < best.dist) best = { channelId: c.id, point: r.point, dist: r.dist };
-      }
-      if (best && best.dist <= this.settings.dropMax) {
-        drops.push({ deviceId: d.id, channelId: best.channelId, point: best.point, length: best.dist });
-      }
-    }
-    return drops;
-  }
   channelLength(ch) {
     return polylineLength(ch.points || []);
   }
@@ -656,8 +529,6 @@ export function sanitizeProject(raw) {
         tag: String(d.tag ?? ''),
         address: String(d.address ?? ''),
         note: String(d.note ?? ''),
-        groupIds: Array.isArray(d.groupIds) ? d.groupIds.map(String) : [],
-        noDrop: !!d.noDrop,
       };
     });
   const channels = (Array.isArray(raw.channels) ? raw.channels : [])
@@ -666,10 +537,10 @@ export function sanitizeProject(raw) {
       id: String(c.id || uid('ch')),
       wallId: c.wallId,
       kind: CHANNEL_KIND_IDS.includes(c.kind) ? c.kind : CHANNEL_KIND_IDS[0],
-      width: clamp(+c.width || 40, 5, 600),
+      width: clamp(+c.width || 100, 5, 600),
+      color: /^#[0-9a-fA-F]{3,8}$/.test(String(c.color || '')) ? String(c.color) : '',
       points: c.points.map((p) => [ +p[0] || 0, +p[1] || 0 ]),
       cableModelId: String(c.cableModelId ?? ''),
-      label: String(c.label ?? ''),
     }));
   const dimensions = (Array.isArray(raw.dimensions) ? raw.dimensions : [])
     .filter((d) => d && wallIds.has(d.wallId) && Array.isArray(d.a) && Array.isArray(d.b))
@@ -685,26 +556,12 @@ export function sanitizeProject(raw) {
         offset: clamp(+d.offset || 60, 0, 600),
       };
     });
-  const groups = (Array.isArray(raw.groups) ? raw.groups : [])
-    .filter((g) => g && Array.isArray(g.deviceIds))
-    .map((g, i) => ({
-      id: String(g.id || uid('grp')),
-      name: String(g.name || `Шлейф ${i + 1}`),
-      kind: ['ШС', 'СОУЭ', 'Питание', 'Адрес', 'Прочее'].includes(g.kind) ? g.kind : 'ШС',
-      color: /^#[0-9a-fA-F]{3,8}$/.test(String(g.color || '')) ? String(g.color) : GROUP_COLORS[i % GROUP_COLORS.length],
-      note: String(g.note ?? ''),
-      deviceIds: g.deviceIds.map(String).filter((id) => devices.some((d) => d.id === id)),
-    }));
-  // согласовать состав объединений и членство устройств (источник истины — group.deviceIds)
-  for (const g of groups) g.deviceIds = g.deviceIds.filter((id) => devices.some((d) => d.id === id));
-  for (const d of devices) d.groupIds = groups.filter((g) => g.deviceIds.includes(d.id)).map((g) => g.id);
   return {
     version: SCHEMA_VERSION,
     meta: { ...base.meta, ...(raw.meta && typeof raw.meta === 'object' ? raw.meta : {}) },
     walls,
     devices,
     channels,
-    groups,
     dimensions,
   };
 }

@@ -2,12 +2,11 @@
  * demo.js — демонстрационный проект BolidGrid.
  *
  * Монтажный план по документации «ДФО .... СПС.СОУЭ» (доп. офис Банка,
- * г. Елизово, ул. Ленина, д.15а): приборы БОЛИД на стене, короба DKC 100×40,
- * объединение в шлейфы/линии и размерные линии (ширина стены, высота короба,
- * высота установки прибора).
+ * г. Елизово, ул. Ленина, д.15а).
  *
- * Извещатели (ДИП-34А) и ручные извещатели (ИПР) в демо не используются:
- * для монтажного плана нужны приборы, короба и размеры.
+ * Задача плана: приборы БОЛИД в реальном масштабе, короба DKC 100×40
+ * (ширина 100 мм) и размерные линии — чтобы понять, сколько короба нужно
+ * и как он пройдёт по стене. Извещатели и объединения в план не входят.
  */
 import { getModel } from './catalog.js';
 import { uid } from './util.js';
@@ -26,7 +25,6 @@ function device(modelId, wallId, x, y, tag, extra = {}) {
     tag,
     address: '',
     note: '',
-    groupIds: [],
     ...extra,
   };
 }
@@ -72,7 +70,7 @@ export function buildDemoProject() {
       width: 100,
       points: [[120, 2580], [4080, 2580]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,75',
-      label: 'Короб DKC 100×40',
+      color: '#94a3b8',
     },
     {
       id: uid('ch'),
@@ -81,16 +79,16 @@ export function buildDemoProject() {
       width: 100,
       points: [[120, 2580], [120, 1000]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,75',
-      label: 'Короб DKC 100×40 (стояк)',
+      color: '#64748b',
     },
     {
       id: uid('ch'),
       wallId: wallA.id,
-      kind: 'короб-60',
-      width: 60,
+      kind: 'кабель-канал',
+      width: 100,
       points: [[3000, 2250], [4080, 2250]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,5',
-      label: 'Короб DKC 60×40',
+      color: '#0ea5e9',
     },
     {
       id: uid('ch'),
@@ -99,7 +97,7 @@ export function buildDemoProject() {
       width: 100,
       points: [[160, 2600], [6240, 2600]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,5',
-      label: 'Лоток Л-1',
+      color: '#94a3b8',
     },
     {
       id: uid('ch'),
@@ -108,7 +106,7 @@ export function buildDemoProject() {
       width: 100,
       points: [[6240, 2600], [6240, 1200]],
       cableModelId: 'КПСнг(А)-FRHF 1x2x0,5',
-      label: 'Короб DKC 100×40 (стояк)',
+      color: '#22c55e',
     },
   ];
 
@@ -124,48 +122,6 @@ export function buildDemoProject() {
     { id: uid('dim'), wallId: wallB.id, a: [0, 0], b: [6400, 0], text: '', offset: 70 },
   ];
 
-  /* ---------- объединения ---------- */
-  const groupA = {
-    id: uid('grp'),
-    name: 'Питание 12 В',
-    kind: 'Питание',
-    color: '#ef4444',
-    note: 'АКБ + приборы',
-    deviceIds: [sirius.id, akb.id, rip12.id, bp12.id],
-  };
-  const groupB = {
-    id: uid('grp'),
-    name: 'ШС-1 (адресная линия)',
-    kind: 'Адрес',
-    color: '#8b5cf6',
-    note: 'приборы и расширитель',
-    deviceIds: [sp2_1.id, sp2_2.id, ar2.id],
-  };
-  const groupC = {
-    id: uid('grp'),
-    name: 'ШС-2',
-    kind: 'ШС',
-    color: '#f59e0b',
-    note: 'управление клапанами и нагрузкой',
-    deviceIds: [sp4.id, mpn1.id, mpn2.id],
-  };
-  const groupD = {
-    id: uid('grp'),
-    name: 'Линия СОУЭ-1',
-    kind: 'СОУЭ',
-    color: '#22c55e',
-    note: 'световые и звуковые оповещатели',
-    deviceIds: [exit1.id, dir1.id, mayak1.id, exit2.id, dir2.id, dir3.id, mayak2.id, mayak3.id],
-  };
-  const groups = [groupA, groupB, groupC, groupD];
-
-  for (const g of groups) {
-    for (const id of g.deviceIds) {
-      const d = devices.find((x) => x.id === id);
-      if (d) d.groupIds = [...new Set([...(d.groupIds || []), g.id])];
-    }
-  }
-
   const project = {
     version: 1,
     meta: {
@@ -178,7 +134,6 @@ export function buildDemoProject() {
     walls: [wallA, wallB],
     devices,
     channels,
-    groups,
     dimensions,
   };
 

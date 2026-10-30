@@ -28,7 +28,6 @@
     <button class="btn icon" data-action="undo" title="Отменить (Ctrl+Z)">↶</button>
     <button class="btn icon" data-action="redo" title="Повторить (Ctrl+Y)">↷</button>
     <span class="sep"></span>
-    <button class="btn" data-action="group" title="Объединить выбранные устройства в шлейф/линию (G)">Объединить</button>
     <button class="btn" data-action="delete" title="Удалить (Del)">Удалить</button>
     <span class="sep"></span>
     <button class="btn" data-action="import" title="Загрузить проект из JSON">Импорт</button>
@@ -129,13 +128,11 @@
     </div>
     <nav class="tabs" id="tabs" role="tablist">
       <button data-tab="props" class="active" role="tab">Свойства</button>
-      <button data-tab="loops" role="tab">Шлейфы</button>
       <button data-tab="spec" role="tab">Спецификация</button>
-      <button data-tab="journal" role="tab">Кабельный журнал</button>
+      <button data-tab="journal" role="tab">Длина короба</button>
     </nav>
     <div class="tabpanels">
       <div id="tab-props" class="tabpanel active" role="tabpanel"></div>
-      <div id="tab-loops" class="tabpanel" role="tabpanel"></div>
       <div id="tab-spec" class="tabpanel" role="tabpanel"></div>
       <div id="tab-journal" class="tabpanel" role="tabpanel"></div>
     </div>
@@ -151,7 +148,6 @@
   </div>
   <div class="sheet-body">
     <div class="menu-grid">
-      <button class="btn" data-menu-action="group">Объединить</button>
       <button class="btn" data-menu-action="delete">Удалить</button>
       <button class="btn" data-menu-action="import">Импорт</button>
       <button class="btn" data-menu-action="export">Экспорт</button>
@@ -178,9 +174,8 @@
 <nav id="mobile-bar" aria-label="Панели">
   <button data-sheet="palette"><span>▤</span>Палитра</button>
   <button data-sheet="props"><span>⚙</span>Свойства</button>
-  <button data-sheet="loops"><span>◈</span>Шлейфы</button>
   <button data-sheet="spec"><span>☰</span>Спец</button>
-  <button data-sheet="journal"><span>⌁</span>Журнал</button>
+  <button data-sheet="journal"><span>⌁</span>Короб</button>
 </nav>
 
 <div id="modal" class="modal-backdrop" hidden>

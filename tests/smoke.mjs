@@ -62,7 +62,7 @@ async function main() {
         return {
           devices: s.project.devices.length,
           channels: s.project.channels.length,
-          groups: s.project.groups.length,
+          dims: (s.project.dimensions || []).length,
           walls: s.project.walls.length,
           tool: s.tool,
           selection: s.selection.length,
@@ -109,6 +109,32 @@ async function main() {
       return { kind: ch.kind, width: ch.width };
     });
     check('канал создаётся как короб шириной 100 мм', channelWidth.width === 100, JSON.stringify(channelWidth));
+
+    // --- цвет короба ---
+    const chPoint = await page.evaluate(() => {
+      const ed = window.BolidGrid.editor;
+      const ch = window.BolidGrid.store.project.channels[window.BolidGrid.store.project.channels.length - 1];
+      const pt = ed.svg.createSVGPoint();
+      pt.x = (ch.points[0][0] + ch.points[1][0]) / 2;
+      pt.y = ed.wall.height - (ch.points[0][1] + ch.points[1][1]) / 2;
+      const sp = pt.matrixTransform(ed.svg.getScreenCTM());
+      return { x: sp.x, y: sp.y };
+    });
+    await page.mouse.click(chPoint.x, chPoint.y);
+    await sleep(250);
+    const chSel = await page.evaluate(() => window.BolidGrid.store.selection[0]?.type);
+    check('клик по трассе выделяет короб', chSel === 'channel', String(chSel));
+    const swatchCount = await page.locator('#tab-props [data-ch-color]').count();
+    check('в свойствах короба есть палитра цветов', swatchCount >= 6, `swatches=${swatchCount}`);
+    await page.locator('#tab-props [data-ch-color]').nth(2).click();
+    await sleep(250);
+    const chColor = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      const path = document.querySelector(`#channels .channel[data-id="${ch.id}"] .channel-body`);
+      return { color: ch.color, stroke: path?.getAttribute('stroke') || '' };
+    });
+    check('цвет короба меняется и применяется на листе', /^#[0-9a-fA-F]{6}$/.test(chColor.color) && chColor.stroke.toLowerCase() === chColor.color.toLowerCase(), JSON.stringify(chColor));
 
     // --- размерные линии ---
     const dimsBefore = await page.evaluate(() => (window.BolidGrid.store.project.dimensions || []).length);
@@ -159,26 +185,24 @@ async function main() {
     const tagText = await page.evaluate(() => window.BolidGrid.store.selectedDevices()[0]?.tag);
     check('изменение обозначения сохраняется', tagText === 'TEST-1', String(tagText));
 
-    // --- объединение устройств в шлейф ---
+    // --- мультивыделение и удаление с отменой ---
     await page.locator('.dev-hit').nth(0).click();
     await page.keyboard.down('Shift');
     await page.locator('.dev-hit').nth(1).click();
     await page.keyboard.up('Shift');
     const selTwo = (await state()).selection;
     check('Shift+клик добавляет второе устройство', selTwo >= 2, `selection=${selTwo}`);
-    await page.keyboard.press('g');
-    await page.waitForSelector('#modal:not([hidden])', { timeout: 4000 });
-    await page.fill('#grp-name', 'Тест-шлейф');
-    await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
-    await sleep(250);
-    const afterGroup = await state();
-    check('создание объединения из выделенных устройств', afterGroup.groups === s0.groups + 1, `${s0.groups} → ${afterGroup.groups}`);
+    const beforeDelete = (await state()).devices;
+    await page.keyboard.press('Delete');
+    await sleep(300);
+    const afterDelete = await state();
+    check('Delete удаляет выделенные устройства', afterDelete.devices < beforeDelete, `${beforeDelete} → ${afterDelete.devices}`);
 
     // --- undo ---
     await page.keyboard.press('Control+z');
-    await sleep(250);
+    await sleep(300);
     const afterUndo = await state();
-    check('Ctrl+Z отменяет создание объединения', afterUndo.groups === s0.groups, `${afterGroup.groups} → ${afterUndo.groups}`);
+    check('Ctrl+Z возвращает удалённые устройства', afterUndo.devices === beforeDelete, `${afterDelete.devices} → ${afterUndo.devices}`);
 
     // --- спецификация ---
     await page.locator('#tabs button[data-tab="spec"]').click();
@@ -210,7 +234,7 @@ async function main() {
     const journalRows = await page.locator('#tab-journal table').first().locator('tbody tr').count();
     check('кабельный журнал содержит строки трасс', journalRows === afterUndo.channels, `rows=${journalRows}, channels=${afterUndo.channels}`);
     const journalText = await page.locator('#tab-journal').innerText();
-    check('кабельный журнал содержит итог и опуски', /Итого/.test(journalText) && /Опуск/i.test(journalText));
+    check('ведомость короба содержит длину и итог', /итого короба/i.test(journalText.replace(/\s+/g, ' ')) && /длина,\s*м/i.test(journalText.replace(/\s+/g, ' ')), journalText.replace(/\s+/g, ' ').slice(0, 90));
 
     // --- отрисовка SVG ---
     await page.locator('#wall-tabs .wall-tab').first().click();
@@ -228,8 +252,7 @@ async function main() {
     });
     check('все устройства стены отрисованы в SVG', dom.devNodes === dom.wallDevices, JSON.stringify(dom));
     check('все каналы стены отрисованы в SVG', dom.channelNodes === dom.wallChannels, JSON.stringify(dom));
-    check('опуски устройств к каналам рассчитаны и нарисованы', dom.drops > 0 && dom.drops <= dom.wallDevices, `drops=${dom.drops}, devices=${dom.wallDevices}`);
-    check('объединения показаны цветными линиями', dom.groupLinks > 0, `links=${dom.groupLinks}`);
+    check('точек подключения и линий шлейфов нет (упрощённый план)', dom.drops === 0 && dom.groupLinks === 0, JSON.stringify(dom));
 
     // --- экспорт ---
     const svg = await page.evaluate(async () => (await window.BolidGrid.editor.exportSVGFile()).length);
@@ -281,17 +304,18 @@ async function main() {
         walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
         devices: [
           { id: 'd1', modelId: 'dip34a', wallId: 'w1', x: 99999, y: -50 },
-          { id: 'd2', modelId: 'dip34a', wallId: 'w1', x: 100, y: 100 },
+          { id: 'd2', modelId: 'sp2', wallId: 'w1', x: 100, y: 100 },
         ],
-        channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 40, points: [[0, 0], [100, 0]] }],
-        groups: [{ id: 'g1', name: 'G', kind: 'ШС', color: '#fff', deviceIds: ['d1', 'd2'] }],
+        channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 40, points: [[0, 0], [100, 0]], color: 'не-цвет', label: 'старое' }],
+        dimensions: [{ id: 'dim1', wallId: 'w1', a: [0, 0], b: [500, 0] }],
       });
       const d = st.project.devices[0];
-      const g = st.project.groups[0];
-      return { x: d.x, y: d.y, groupIds: d.groupIds, groupDeviceIds: g.deviceIds };
+      const ch = st.project.channels[0];
+      return { x: d.x, y: d.y, models: st.project.devices.map((x) => x.modelId), chColor: ch.color, chLabel: ch.label, dims: st.project.dimensions.length };
     });
     check('импорт: координаты устройств ограничены стеной', imported.x <= 5900 && imported.y >= 0, JSON.stringify(imported));
-    check('импорт: членство устройств и объединений согласовано', imported.groupIds.includes('g1'), JSON.stringify(imported));
+    check('импорт: неизвестные модели заменяются на «прочее»', imported.models[1] === 'sp2' && imported.models.every(Boolean), JSON.stringify(imported.models));
+    check('импорт: размерные линии и цвет короба нормализуются', imported.dims === 1 && imported.chColor === '' && imported.chLabel === undefined, JSON.stringify(imported));
 
     const tagState = await page.evaluate(() => {
       const st = window.BolidGrid.store;
@@ -299,7 +323,6 @@ async function main() {
         walls: [{ id: 'a', name: 'A', width: 6000, height: 2700 }, { id: 'b', name: 'B', width: 6000, height: 2700 }],
         devices: [{ id: 'd1', modelId: 'dip34a', wallId: 'b', x: 100, y: 100, tag: '2.1' }],
         channels: [],
-        groups: [],
       });
       st.activeWallId = 'b';
       st.removeWall('a');

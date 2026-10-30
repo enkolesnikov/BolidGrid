@@ -109,7 +109,7 @@ async function main() {
           return {
             devices: st.project.devices.length,
             channels: st.project.channels.length,
-            groups: st.project.groups.length,
+            dims: (st.project.dimensions || []).length,
             walls: st.project.walls.length,
             tool: st.tool,
             selection: st.selection.length,

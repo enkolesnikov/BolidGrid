@@ -35,7 +35,7 @@ function updateStatus(s) {
   const wall = $('st-wall');
   if (wall) wall.textContent = s.wall || '—';
   const counts = $('st-counts');
-  if (counts) counts.textContent = `устройств: ${s.counts.devices} · каналов: ${s.counts.channels} · шлейфов: ${s.counts.groups}`;
+  if (counts) counts.textContent = `приборов: ${s.counts.devices} · коробов: ${s.counts.channels} · размеров: ${s.counts.dims || 0}`;
 }
 
 /* ================== уведомления / тосты ================== */
@@ -128,11 +128,6 @@ const actions = {
   },
   redo: () => {
     if (!store.redo()) panels.toast('Уже в конце истории');
-  },
-  group: () => {
-    const ids = store.selectedDevices().map((d) => d.id);
-    if (!ids.length) return panels.toast('Сначала выделите устройства на стене', true);
-    panels.openGroupDialog(ids);
   },
   delete: () => {
     const n = store.removeSelection();
@@ -394,8 +389,6 @@ window.addEventListener('keydown', (e) => {
         for (const d of sel) store.updateDevice(d.id, { rot: ((d.rot || 0) + 90) % 360 }, { commit: false });
       });
     }
-  } else if (e.key === 'g' || e.key === 'G' || e.key === 'п' || e.key === 'П') {
-    actions.group();
   } else if (e.key === 'f' || e.key === 'F' || e.key === 'а' || e.key === 'А') {
     editor.fit();
   } else if (e.key === 'v' || e.key === 'V' || e.key === 'м' || e.key === 'М') {
@@ -455,7 +448,7 @@ window.addEventListener('afterprint', () => {
   console.info('[BolidGrid] готов:', {
     devices: store.project.devices.length,
     channels: store.project.channels.length,
-    groups: store.project.groups.length,
+    dims: (store.project.dimensions || []).length,
     spec: !!store.spec,
   });
 })();

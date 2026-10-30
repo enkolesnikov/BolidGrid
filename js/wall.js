@@ -400,10 +400,6 @@ export class WallEditor {
         return;
       }
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
-      if (info.type === 'group') {
-        this.store.select([{ type: 'group', id: info.id }], additive);
-        return;
-      }
       if (info.type === 'channel') {
         this.store.select([{ type: 'channel', id: info.id }], additive);
         this.render();
@@ -753,13 +749,10 @@ export class WallEditor {
     this.svg.classList.toggle('tool-pan', this.tool === 'pan');
     this.svg.classList.toggle('armed', this.tool === 'place');
 
-    const drops = this.store.computeDrops(this.wall.id);
     const parts = [];
     parts.push(this._defs());
     parts.push(`<g id="sheet">${this._sheet()}${this._grid()}</g>`);
     parts.push(`<g id="channels">${this._channels()}</g>`);
-    parts.push(`<g id="drops">${this._drops(drops)}</g>`);
-    parts.push(`<g id="groups">${this._groupLinks()}</g>`);
     parts.push(`<g id="dimensions">${this._dimensions()}</g>`);
     parts.push(`<g id="devices">${this._devices()}</g>`);
     parts.push(`<g id="overlay">${this._overlay()}</g>`);
@@ -820,13 +813,11 @@ export class WallEditor {
       const d = pathD(ch.points, (y) => this.toScreenY(y));
       const sw = Math.max(ch.width, 6);
       const sel = this.store.isSelected('channel', ch.id) ? ' sel' : '';
-      const mid = this._polylineMid(ch.points);
-      const label = ch.label || (ch.cableModelId ? ch.cableModelId : def.label);
+      const color = ch.color || def.color;
       out += `<g class="channel${sel}" data-type="channel" data-id="${ch.id}">
         <path class="channel-hit" d="${d}" stroke-width="${Math.max(sw * 2.6, 140)}"/>
-        <path class="channel-body" d="${d}" stroke-width="${sw}" stroke="${def.color}"/>
+        <path class="channel-body" d="${d}" stroke-width="${sw}" stroke="${color}"/>
         <path class="channel-inner" d="${d}" stroke-width="${Math.max(sw * 0.26, 2)}"/>
-        <text class="channel-label" x="${mid[0] + 40}" y="${this.toScreenY(mid[1]) - 40}">${esc(label)} · ${m(this.store.channelLength(ch))}</text>
       </g>`;
 
     }
@@ -848,43 +839,6 @@ export class WallEditor {
     return points[points.length - 1];
   }
 
-  _drops(drops) {
-    let out = '';
-    for (const drop of drops) {
-      const dev = this.store.getDevice(drop.deviceId);
-      if (!dev) continue;
-      const model = getModel(dev.modelId);
-      const ax = dev.x + model.w / 2;
-      const ay = this.toScreenY(dev.y);
-      const bx = drop.point[0];
-      const by = this.toScreenY(drop.point[1]);
-      out += `<path class="drop" d="M${ax} ${ay} L${bx} ${by}"/>
-        <circle cx="${bx}" cy="${by}" r="${Math.max(8, 4 / this.pxPerMm)}" fill="#0ea5e9" opacity=".9"/>`;
-    }
-    return out;
-  }
-
-  _groupLinks() {
-    let out = '';
-    for (const g of this.store.project.groups) {
-      const devs = g.deviceIds.map((id) => this.store.getDevice(id)).filter((d) => d && d.wallId === this.wall.id);
-      if (devs.length < 2) continue;
-      const pts = devs.map((d) => {
-        const model = getModel(d.modelId);
-        return [d.x + model.w / 2, this.toScreenY(d.y + model.h / 2)];
-      });
-      let d = `M${pts[0][0]} ${pts[0][1]}`;
-      for (let i = 1; i < pts.length; i++) d += ` L${pts[i][0]} ${pts[i][1]}`;
-      const first = pts[0];
-      out += `<g class="group-link" data-type="group" data-id="${g.id}">
-        <path d="${d}" stroke="${g.color}" pointer-events="stroke" stroke-width="${Math.max(5, 3 / this.pxPerMm)}"/>
-        <circle cx="${first[0]}" cy="${first[1]}" r="${Math.max(16, 7 / this.pxPerMm)}" fill="${g.color}" opacity=".9"/>
-        <text class="group-label" x="${first[0] + 40}" y="${first[1] - 40}" fill="${g.color}">${esc(g.name)} · ${devs.length}</text>
-      </g>`;
-    }
-    return out;
-  }
-
   _devices() {
     const wallH = this.wall.height;
     const ppm = this.pxPerMm || 0.2;
@@ -895,8 +849,6 @@ export class WallEditor {
     for (const d of this.store.wallDevices) {
       const model = getModel(d.modelId);
       const sel = this.store.isSelected('device', d.id) ? ' sel' : '';
-      const groups = (d.groupIds || []).map((id) => this.store.getGroup(id)).filter(Boolean);
-      const loopColor = groups.length ? groups[0].color : null;
       const label = d.tag || model.name;
       const yScreen = wallH - (d.y + model.h);
       const rot = d.rot || 0;
@@ -906,7 +858,6 @@ export class WallEditor {
           <rect class="dev-hit" x="${-16}" y="${-16}" width="${model.w + 32}" height="${model.h + 32}" rx="10"/>
           <rect class="sel-frame" x="${-22}" y="${-22}" width="${model.w + 44}" height="${model.h + 44}" rx="12" vector-effect="non-scaling-stroke"/>
         </g>
-        ${loopColor ? `<rect x="${model.w - 40}" y="${-24}" width="58" height="12" rx="3" fill="${loopColor}" vector-effect="non-scaling-stroke"/>` : ''}
         ${showTag ? `<text class="dev-tag" x="${model.w / 2}" y="${model.h + 90}">${esc(label)}</text>` : ''}
         ${showSub ? `<text class="dev-sub" x="${model.w / 2}" y="${model.h + 152}">${esc(d.address || model.model)}</text>` : ''}
       </g>`;
@@ -985,7 +936,7 @@ export class WallEditor {
       counts: {
         devices: this.store.wallDevices.length,
         channels: this.store.wallChannels.length,
-        groups: this.store.project.groups.length,
+        dims: (this.store.project.dimensions || []).length,
       },
     });
   }
@@ -1151,36 +1102,6 @@ export class WallEditor {
     this.view.h = (span * pxH) / pxW;
     this.view.x = x - this.view.w / 2;
     this.view.y = this.wall.height - yFloor - this.view.h / 2;
-    this.render();
-  }
-  focusOnGroup(group) {
-    if (!group) return;
-    const devs = group.deviceIds.map((id) => this.store.getDevice(id)).filter((d) => d && d.wallId === this.wall.id);
-    if (!devs.length) {
-      const any = group.deviceIds.map((id) => this.store.getDevice(id)).filter(Boolean)[0];
-      if (any) {
-        this.store.setActiveWall(any.wallId);
-        requestAnimationFrame(() => this.focusOnGroup(group));
-      }
-      return;
-    }
-    let x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
-    for (const d of devs) {
-      const model = getModel(d.modelId);
-      x1 = Math.min(x1, d.x);
-      x2 = Math.max(x2, d.x + model.w);
-      y1 = Math.min(y1, d.y);
-      y2 = Math.max(y2, d.y + model.h);
-    }
-    const cx = (x1 + x2) / 2;
-    const cyS = this.wall.height - (y1 + y2) / 2;
-    const span = Math.max(x2 - x1 + 600, 1200);
-    const pxW = this.svg.clientWidth || 900;
-    const pxH = this.svg.clientHeight || 600;
-    this.view.w = span;
-    this.view.h = (span * pxH) / pxW;
-    this.view.x = cx - this.view.w / 2;
-    this.view.y = cyS - this.view.h / 2;
     this.render();
   }
   finishChannel() {

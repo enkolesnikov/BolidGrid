@@ -95,7 +95,7 @@ const getState = (page) =>
     return {
       devices: s.project.devices.length,
       channels: s.project.channels.length,
-      groups: s.project.groups.length,
+      dims: (s.project.dimensions || []).length,
       walls: s.project.walls.length,
       wallId: s.wall?.id,
       wallName: s.wall?.name,
@@ -214,7 +214,6 @@ const normProject = (p) => ({
       address: d.address,
       note: d.note,
       noDrop: !!d.noDrop,
-      groupIds: [...(d.groupIds || [])].sort(),
     }))
     .sort((a, b) => (a.id < b.id ? -1 : 1)),
   channels: p.channels
@@ -228,7 +227,7 @@ const normProject = (p) => ({
       label: c.label,
     }))
     .sort((a, b) => (a.id < b.id ? -1 : 1)),
-  groups: p.groups
+  dims: p.dimensions?.length ?? 0
     .map((g) => ({
       id: g.id,
       name: g.name,
@@ -315,7 +314,7 @@ async function main() {
     const appA = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page: pageA, errors: errorsA } = appA;
     const sA0 = await getState(pageA);
-    check('демо-проект загружен при старте', sA0.devices === 20 && sA0.walls === 2 && sA0.channels === 5 && sA0.groups === 4, JSON.stringify(sA0));
+    check('демо-проект загружен при старте', sA0.devices === 20 && sA0.walls === 2 && sA0.channels === 5 && sA0.dims === 4, JSON.stringify(sA0));
     check('спецификация загружена (data/spec.json)', await pageA.evaluate(() => !!window.BolidGrid.store.spec));
 
     const metrics = () =>
@@ -359,7 +358,7 @@ async function main() {
       m1680.left.w > 200 && m1680.stage.w > 400 && m1680.right.w > 250 &&
       m1680.left.right <= m1680.stage.x + 1 && m1680.stage.right <= m1680.right.x + 1;
     check('1680×1000: три колонки видны и не перекрываются', columnsOk, JSON.stringify({ left: m1680.left?.w, stage: m1680.stage?.w, right: m1680.right?.w, cols: m1680.gridColumns }));
-    check('1680×1000: палитра слева и вкладки справа отрисованы', m1680.palette && m1680.palette.h > 50 && m1680.tabs.length === 4 && m1680.activePanel === 'tab-props', JSON.stringify({ paletteH: m1680.palette?.h, tabs: m1680.tabs }));
+    check('1680×1000: палитра слева и вкладки справа отрисованы', m1680.palette && m1680.palette.h > 50 && m1680.tabs.length === 3 && m1680.activePanel === 'tab-props', JSON.stringify({ paletteH: m1680.palette?.h, tabs: m1680.tabs }));
     check('1680×1000: SVG-стена отрисована (полотно > 500×400)', m1680.wall && m1680.wall.w > 500 && m1680.wall.h > 400, JSON.stringify(m1680.wall));
     check('1680×1000: нет горизонтального переполнения body', m1680.docScrollWidth <= m1680.innerWidth + 1 && m1680.bodyScrollWidth <= m1680.innerWidth + 1, `scrollW=${m1680.docScrollWidth}, innerW=${m1680.innerWidth}`);
     check('1680×1000: ни один HTML-элемент не выходит за вьюпорт', m1680.overflow.length === 0, JSON.stringify(m1680.overflow.slice(0, 3)));
@@ -452,7 +451,7 @@ async function main() {
     const appB = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page, errors: errorsB } = appB;
     const s0 = await getState(page);
-    check('B: стартовое демо 20 устройств / 5 каналов / 4 шлейфа / 2 стены', s0.devices === 20 && s0.channels === 5 && s0.groups === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, g: s0.groups, w: s0.walls }));
+    check('B: стартовое демо 20 устройств / 5 коробов / 4 размера / 2 стены', s0.devices === 20 && s0.channels === 5 && s0.dims === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, dims: s0.dims, w: s0.walls }));
 
     const paletteIds = await page.$$eval('#palette-list .pal-item', (els) => els.map((e) => e.dataset.model));
     check('B: палитра содержит ровно 18 моделей (без извещателей)', paletteIds.length === 18, `count=${paletteIds.length}`);
@@ -638,109 +637,6 @@ async function main() {
     await pressKeys(page, ['Control+z', 'Control+z', 'Control+z'], 80);
     check('B: отмена правок трассы и создания канала возвращает исходное число каналов', (await getState(page)).channels === channelsBefore);
 
-    /* ---------- B4. Объединения ---------- */
-    section('B4. Объединения: создание, переименование, цвет, добавление, удаление');
-    devsOnWall = await page.evaluate(() => window.BolidGrid.store.wallDevices.map((d) => d.id));
-    check('B: на стене достаточно устройств для объединения', devsOnWall.length >= 4, `n=${devsOnWall.length}`);
-    await clickDevice(page, devsOnWall[0]);
-    await clickDevice(page, devsOnWall[1], ['Shift']);
-    const selTwo = await page.evaluate(() => window.BolidGrid.store.selection.length);
-    check('B: Shift+клик выделяет два устройства', selTwo === 2, `sel=${selTwo}`);
-    await blurAll(page);
-    await page.keyboard.press('g');
-    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    check('B: G открывает диалог объединения', true);
-    await page.fill('#grp-name', 'QA-шлейф');
-    await page.selectOption('#grp-kind', 'СОУЭ');
-    const swatch = page.locator('#grp-colors .swatch').nth(2);
-    const chosenColor = await swatch.getAttribute('data-color');
-    await swatch.click();
-    await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
-    await sleep(350);
-    const group = await page.evaluate(() => {
-      const s = window.BolidGrid.store;
-      const g = s.project.groups[s.project.groups.length - 1];
-      return {
-        id: g.id, name: g.name, kind: g.kind, color: g.color, deviceIds: g.deviceIds.slice(),
-        memberships: g.deviceIds.map((id) => s.getDevice(id)?.groupIds || []),
-        groups: s.project.groups.length,
-      };
-    });
-    check('B: объединение создано с именем/видом/цветом', group.name === 'QA-шлейф' && group.kind === 'СОУЭ' && group.color === chosenColor, JSON.stringify({ name: group.name, kind: group.kind, color: group.color, chosenColor }));
-    check('B: в объединение вошли 2 выделенных устройства', group.deviceIds.length === 2 && group.groups === 5, JSON.stringify({ deviceIds: group.deviceIds.length, groups: group.groups }));
-    check('B: у устройств проставлено членство в объединении', group.memberships.every((ids) => ids.includes(group.id)), JSON.stringify(group.memberships));
-
-    // переименование
-    await page.locator('#tabs button[data-tab="loops"]').click();
-    await sleep(150);
-    await page.locator(`#tab-loops [data-loop-act="select"][data-id="${group.id}"]`).click();
-    await sleep(250);
-    // «Выбрать» приближает вид к объединению — вернём «вся стена», иначе часть устройств уйдёт за кадр
-    await page.locator('#btn-zoom-fit').click();
-    await sleep(300);
-    await page.locator('#tabs button[data-tab="props"]').click();
-    await sleep(150);
-    await page.fill('#tab-props input[data-f="name"]', 'QA-шлейф-2');
-    await page.locator('#tab-props input[data-f="name"]').press('Enter');
-    await sleep(300);
-    check('B: переименование объединения из инспектора', (await page.evaluate((id) => window.BolidGrid.store.getGroup(id)?.name, group.id)) === 'QA-шлейф-2');
-
-    // цвет
-    const newColor = await page.locator('#tab-props .swatch[data-color]').nth(4).getAttribute('data-color');
-    await page.locator('#tab-props .swatch[data-color]').nth(4).click();
-    await sleep(300);
-    const colorState = await page.evaluate((id) => {
-      const s = window.BolidGrid.store;
-      const g = s.getGroup(id);
-      const link = document.querySelector(`#groups .group-link[data-id="${id}"] path`);
-      return { color: g.color, stroke: link?.getAttribute('stroke') || null };
-    }, group.id);
-    check('B: смена цвета объединения применяется', colorState.color === newColor, JSON.stringify({ color: colorState.color, newColor }));
-    check('B: цвет объединения применён к линии на стене', colorState.stroke === newColor, JSON.stringify(colorState));
-
-    // добавить устройство в объединение через вкладку «Шлейфы»
-    await page.locator('#tabs button[data-tab="props"]').click();
-    await sleep(120);
-    await clickDevice(page, devsOnWall[2]);
-    await page.locator('#tabs button[data-tab="loops"]').click();
-    await sleep(200);
-    await page.locator(`#tab-loops [data-loop-act="add"][data-id="${group.id}"]`).click();
-    await sleep(350);
-    const addState = await page.evaluate(({ gid, did }) => {
-      const s = window.BolidGrid.store;
-      const g = s.getGroup(gid);
-      const d = s.getDevice(did);
-      return { count: g.deviceIds.length, has: g.deviceIds.includes(did), devHas: (d.groupIds || []).includes(gid) };
-    }, { gid: group.id, did: devsOnWall[2] });
-    check('B: «+ выделенные» добавляет устройство в объединение (двусторонне)', addState.count === 3 && addState.has && addState.devHas, JSON.stringify(addState));
-
-    // удалить объединение
-    await page.locator(`#tab-loops [data-loop-act="del"][data-id="${group.id}"]`).click();
-    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
-    await sleep(350);
-    const delGroup = await page.evaluate((gid) => {
-      const s = window.BolidGrid.store;
-      return {
-        groups: s.project.groups.length,
-        exists: !!s.getGroup(gid),
-        leftover: s.project.devices.filter((d) => (d.groupIds || []).includes(gid)).length,
-        links: document.querySelectorAll(`#groups .group-link[data-id="${gid}"]`).length,
-      };
-    }, group.id);
-    check('B: удаление объединения очищает членство устройств', delGroup.groups === 4 && !delGroup.exists && delGroup.leftover === 0, JSON.stringify(delGroup));
-    check('B: линия удалённого объединения убрана из SVG', delGroup.links === 0);
-
-    // пустое выделение: «Объединить» не открывает диалог, «Удалить» ничего не делает
-    await page.evaluate(() => window.BolidGrid.store.clearSelection());
-    await page.locator('#topbar [data-action="delete"]').click();
-    await sleep(200);
-    await page.locator('#topbar [data-action="group"]').click();
-    await sleep(250);
-    const sEmpty = await getState(page);
-    check('B: «Удалить» при пустом выделении безопасен', sEmpty.devices === 20, `devices=${sEmpty.devices}`);
-    check('B: «Объединить» при пустом выделении — подсказка и без диалога', /Сначала выделите устройства/.test(sEmpty.toast) && sEmpty.modalOpen === false, JSON.stringify({ toast: sEmpty.toast, modal: sEmpty.modalOpen }));
-
     /* ---------- B5. Стены ---------- */
     section('B5. Стены: переключение, добавление, изменение размера, удаление');
     const walls = await page.evaluate(() => window.BolidGrid.store.project.walls.map((w) => ({ id: w.id, name: w.name, width: w.width, height: w.height })));
@@ -821,12 +717,17 @@ async function main() {
       return {
         walls: s.project.walls.length,
         devices: s.project.devices.length,
-        orphanDeviceGroups: s.project.groups.reduce((acc, g) => acc + g.deviceIds.filter((id) => !s.getDevice(id)).length, 0),
-        orphanDeviceGroupIds: s.project.devices.reduce((acc, d) => acc + (d.groupIds || []).filter((id) => !s.getGroup(id)).length, 0),
-        groupMemberTotal: s.project.groups.reduce((acc, g) => acc + g.deviceIds.length, 0),
+        channelsLeft: s.project.channels.length,
+        dimsLeft: (s.project.dimensions || []).length,
+        orphanChannels: s.project.channels.filter((c) => c.wallId !== s.wall.id).length,
+        orphanDims: (s.project.dimensions || []).filter((d) => d.wallId !== s.wall.id).length,
       };
     });
-    check('B: удаление стены удаляет её устройства и чистит шлейфы', sDeleteWall2.walls === 1 && sDeleteWall2.devices === 15 && sDeleteWall2.orphanDeviceGroups === 0 && sDeleteWall2.orphanDeviceGroupIds === 0, JSON.stringify(sDeleteWall2));
+    check(
+      'B: удаление стены удаляет её устройства, короба и размеры',
+      sDeleteWall2.walls === 1 && sDeleteWall2.devices === 15 && sDeleteWall2.orphanChannels === 0 && sDeleteWall2.orphanDims === 0,
+      JSON.stringify(sDeleteWall2)
+    );
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 100);
     const sUndoWall = await getState(page);
@@ -948,7 +849,7 @@ async function main() {
       serialize: window.BolidGrid.store.serialize(),
       devices: window.BolidGrid.store.project.devices.length,
       channels: window.BolidGrid.store.project.channels.length,
-      groups: window.BolidGrid.store.project.groups.length,
+      dims: (window.BolidGrid.store.project.dimensions || []).length,
     }));
     await blurAll(page);
     await pressKeys(page, Array(60).fill('Control+z'), 14);
@@ -957,26 +858,25 @@ async function main() {
       serialize: window.BolidGrid.store.serialize(),
       devices: window.BolidGrid.store.project.devices.length,
       channels: window.BolidGrid.store.project.channels.length,
-      groups: window.BolidGrid.store.project.groups.length,
+      dims: (window.BolidGrid.store.project.dimensions || []).length,
     }));
     check(
       'B: 60×undo + 60×redo не меняют проект (побайтово)',
-      afterSpam.serialize === beforeSpam.serialize && beforeSpam.devices === afterSpam.devices && beforeSpam.channels === afterSpam.channels && beforeSpam.groups === afterSpam.groups,
-      JSON.stringify({ d: [beforeSpam.devices, afterSpam.devices], c: [beforeSpam.channels, afterSpam.channels], g: [beforeSpam.groups, afterSpam.groups] })
+      afterSpam.serialize === beforeSpam.serialize && beforeSpam.devices === afterSpam.devices && beforeSpam.channels === afterSpam.channels && beforeSpam.dims === afterSpam.dims,
+      JSON.stringify({ d: [beforeSpam.devices, afterSpam.devices], c: [beforeSpam.channels, afterSpam.channels], dims: [beforeSpam.dims, afterSpam.dims] })
     );
     const integrity = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const wallIds = new Set(s.project.walls.map((w) => w.id));
       const devIds = new Set(s.project.devices.map((d) => d.id));
-      const grpIds = new Set(s.project.groups.map((g) => g.id));
       return {
         badDevices: s.project.devices.filter((d) => !wallIds.has(d.wallId) || !Number.isFinite(d.x) || !Number.isFinite(d.y)).length,
         badChannels: s.project.channels.filter((c) => !wallIds.has(c.wallId) || !Array.isArray(c.points) || c.points.length < 2).length,
-        badGroups: s.project.groups.filter((g) => g.deviceIds.some((id) => !devIds.has(id))).length,
-        badGroupIds: s.project.devices.filter((d) => (d.groupIds || []).some((id) => !grpIds.has(id))).length,
+        badDims: (s.project.dimensions || []).filter((d) => !wallIds.has(d.wallId) || !Array.isArray(d.a) || !Array.isArray(d.b)).length,
+        devCount: devIds.size,
       };
     });
-    check('B: после spam проект целостен (нет висячих ссылок)', integrity.badDevices === 0 && integrity.badChannels === 0 && integrity.badGroups === 0 && integrity.badGroupIds === 0, JSON.stringify(integrity));
+    check('B: после spam проект целостен (нет висячих ссылок)', integrity.badDevices === 0 && integrity.badChannels === 0 && integrity.badDims === 0 && integrity.devCount > 0, JSON.stringify(integrity));
 
     /* ---------- B9. Зум / пан ---------- */
     section('B9. Зум и панорама');
@@ -1106,7 +1006,7 @@ async function main() {
     const journalApi = await page.evaluate(() => {
       const p = window.BolidGrid.panels;
       const j = p.buildJournalRows();
-      return { totals: j.totals, totalsByCable: j.totalsByCable, rows: j.rows.map((r) => ({ id: r.id, length: r.length, drops: r.drops, dropLength: r.dropLength, total: r.total, cable: r.cable })) };
+      return { totals: j.totals, totalsByCable: j.totalsByCable, rows: j.rows.map((r) => ({ id: r.id, length: r.length, width: r.width, cable: r.cable })) };
     });
     const cableApi = new Map(journalApi.totalsByCable.map((t) => [normCable(t.cable), t.length]));
     let cableOk = true;
@@ -1141,18 +1041,12 @@ async function main() {
       const cells = journalDom.rows[i];
       if (!cells) return false;
       const trace = parseRuNum(cells[3]);
-      const drops = parseRuNum(cells[4]);
-      const dropLen = parseRuNum(cells[5]);
-      const total = parseRuNum(cells[6]);
-      return Math.abs(trace - r.length / 1000) < 0.006 && drops === r.drops && Math.abs(dropLen - r.dropLength / 1000) < 0.006 && Math.abs(total - r.total / 1000) < 0.006;
+      return Math.abs(trace - r.length / 1000) < 0.006;
     });
-    check('B: длины трасс/опусков в журнале совпадают с расчётом (м)', journalRowsOk);
-    const footerOk = journalDom.tfoot.length >= 5 &&
-      Math.abs(parseRuNum(journalDom.tfoot[1]) - journalApi.totals.length / 1000) < 0.006 &&
-      parseRuNum(journalDom.tfoot[2]) === journalApi.totals.drops &&
-      Math.abs(parseRuNum(journalDom.tfoot[3]) - journalApi.totals.dropLength / 1000) < 0.006 &&
-      Math.abs(parseRuNum(journalDom.tfoot[4]) - journalApi.totals.total / 1000) < 0.006;
-    check('B: итоговая строка журнала корректна', footerOk, JSON.stringify(journalDom.tfoot));
+    check('B: длины трасс в ведомости короба совпадают с расчётом (м)', journalRowsOk);
+    const footerOk = journalDom.tfoot.length >= 1 &&
+      Math.abs(parseRuNum(journalDom.tfoot[journalDom.tfoot.length - 1]) - journalApi.totals.length / 1000) < 0.006;
+    check('B: итоговая строка ведомости короба корректна', footerOk, JSON.stringify(journalDom.tfoot));
     const cableSectionOk = journalDom.cables.length === journalApi.totalsByCable.length && journalApi.totalsByCable.every((t) => {
       const row = journalDom.cables.find((c) => normCable(c[0]) === normCable(t.cable));
       return row && Math.abs(parseRuNum(row[1]) - t.length / 1000) < 0.006;
@@ -1195,7 +1089,7 @@ async function main() {
       return {
         devices: s.project.devices.length,
         channels: s.project.channels.length,
-        groups: s.project.groups.length,
+        dims: (s.project.dimensions || []).length,
         walls: s.project.walls.length,
         wallName: s.wall?.name,
         wallId: s.activeWallId,
@@ -1211,7 +1105,7 @@ async function main() {
       return {
         devices: s.project.devices.length,
         channels: s.project.channels.length,
-        groups: s.project.groups.length,
+        dims: (s.project.dimensions || []).length,
         walls: s.project.walls.length,
         wallName: s.wall?.name,
         wallId: s.activeWallId,
@@ -1221,7 +1115,7 @@ async function main() {
       };
     });
     check('B: после reload проект восстановлен из localStorage (не демо)', afterReload.devices === beforeReload.devices && afterReload.devices > 0, JSON.stringify({ before: beforeReload.devices, after: afterReload.devices }));
-    check('B: после reload восстановлена активная стена и всё содержимое', afterReload.wallName === beforeReload.wallName && afterReload.wallId === beforeReload.wallId && afterReload.channels === beforeReload.channels && afterReload.groups === beforeReload.groups && JSON.stringify(afterReload.tags) === JSON.stringify(beforeReload.tags), JSON.stringify({ before: { wall: beforeReload.wallName, c: beforeReload.channels, g: beforeReload.groups }, after: { wall: afterReload.wallName, c: afterReload.channels, g: afterReload.groups } }));
+    check('B: после reload восстановлена активная стена и всё содержимое', afterReload.wallName === beforeReload.wallName && afterReload.wallId === beforeReload.wallId && afterReload.channels === beforeReload.channels && afterReload.dims === beforeReload.dims && JSON.stringify(afterReload.tags) === JSON.stringify(beforeReload.tags), JSON.stringify({ before: { wall: beforeReload.wallName, c: beforeReload.channels, dims: beforeReload.dims }, after: { wall: afterReload.wallName, c: afterReload.channels, dims: afterReload.dims } }));
     check('B: после reload SVG снова отрисован', afterReload.devNodes === afterReload.wallDevices && afterReload.devNodes > 0, JSON.stringify({ devNodes: afterReload.devNodes, wallDevices: afterReload.wallDevices }));
 
     /* ---------- B12. Экспорт JSON → импорт → идентичность ---------- */
@@ -1258,7 +1152,7 @@ async function main() {
     check(
       'B: проект после экспорт→импорт идентичен (стены/устройства/каналы/объединения/обозначения)',
       JSON.stringify(normProject(importedProject)) === JSON.stringify(normProject(JSON.parse(beforeImport).project)) && afterImport.devNodes === afterImport.wallDevices,
-      JSON.stringify({ devices: importedProject.devices.length, channels: importedProject.channels.length, groups: importedProject.groups.length })
+      JSON.stringify({ devices: importedProject.devices.length, channels: importedProject.channels.length, dims: (importedProject.dimensions || []).length })
     );
     check('B: импорт сбрасывает историю undo', afterImport.canUndo === false);
 
@@ -1363,7 +1257,7 @@ async function main() {
         walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
         devices: [{ id: 'd1', modelId: 'dip34a', wallId: 'w1', x: 99999, y: -50, rot: 45, tag: '1.1' }],
         channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 40, points: [[0, 0], [100, 0]] }],
-        groups: [{ id: 'g1', name: 'G', kind: 'ШС', color: '#f59e0b', deviceIds: ['d1'] }],
+        dimensions: [{ id: 'dim1', wallId: 'w1', a: [0, 0], b: [500, 0] }],
       },
     };
     await page.setInputFiles('#file-input', { name: 'oob.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(oobPayload)) });
@@ -1381,50 +1275,46 @@ async function main() {
       JSON.stringify(oob)
     );
 
-    // членство групп согласуется двусторонне (BUG-3 fix)
-    const memberPayload = {
+    // размерные линии: координаты ограничиваются, битые отбрасываются
+    const dimPayload = {
       project: {
         walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
-        devices: [
-          { id: 'd1', modelId: 'dip34a', wallId: 'w1', x: 100, y: 100, tag: '1.1', groupIds: ['nope'] },
-          { id: 'd2', modelId: 'dip34a', wallId: 'w1', x: 300, y: 100, tag: '1.2' },
-        ],
+        devices: [],
         channels: [],
-        groups: [{ id: 'g1', name: 'G', kind: 'ШС', color: '#f59e0b', deviceIds: ['d1', 'd2'] }],
+        dimensions: [
+          { id: 'dim1', wallId: 'w1', a: [-100, 99999], b: [7000, 400] },
+          { id: 'dim2', wallId: 'нет-такой', a: [0, 0], b: [100, 0] },
+        ],
       },
     };
-    await page.setInputFiles('#file-input', { name: 'members.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(memberPayload)) });
+    await page.setInputFiles('#file-input', { name: 'dims.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(dimPayload)) });
     await sleep(800);
-    const member = await page.evaluate(() => {
+    const dimsImported = await page.evaluate(() => {
       const s = window.BolidGrid.store;
-      const g = s.project.groups[0];
-      const d1 = s.getDevice('d1');
-      const d2 = s.getDevice('d2');
-      return {
-        groupDeviceIds: [...g.deviceIds].sort(),
-        d1Groups: [...(d1.groupIds || [])].sort(),
-        d2Groups: [...(d2.groupIds || [])].sort(),
-        consistent: g.deviceIds.every((id) => (s.getDevice(id)?.groupIds || []).includes(g.id)) && [d1, d2].every((d) => d.groupIds.every((gid) => g.deviceIds.includes(d.id))),
-      };
+      const dims = s.project.dimensions || [];
+      return { count: dims.length, a: dims[0]?.a, b: dims[0]?.b };
     });
-    check('B: импорт — членство устройств и объединений согласовано двусторонне (BUG-3 fix)', member.consistent && JSON.stringify(member.groupDeviceIds) === JSON.stringify(['d1', 'd2']) && JSON.stringify(member.d1Groups) === JSON.stringify(['g1']) && JSON.stringify(member.d2Groups) === JSON.stringify(['g1']), JSON.stringify(member));
+    check(
+      'B: импорт — размерные линии ограничиваются стеной, чужая стена отбрасывается',
+      dimsImported.count === 1 && dimsImported.a[0] >= 0 && dimsImported.b[0] <= 6000 && dimsImported.a[1] <= 2700,
+      JSON.stringify(dimsImported)
+    );
 
     // неизвестные kind/color нормализуются
     const dirtyPayload = {
       project: {
         walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
         devices: [],
-        channels: [{ id: 'c1', wallId: 'w1', kind: 'ракета', width: -10, points: [[0, 0], [10, 10]] }],
-        groups: [{ id: 'g1', name: 'G', kind: 'Инопланетный', color: 'red', deviceIds: [] }],
+        channels: [{ id: 'c1', wallId: 'w1', kind: 'ракета', width: -10, color: 'red', points: [[0, 0], [10, 10]] }],
       },
     };
     await page.setInputFiles('#file-input', { name: 'dirty.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(dirtyPayload)) });
     await sleep(800);
     const dirty = await page.evaluate(() => {
       const s = window.BolidGrid.store;
-      return { channelKind: s.project.channels[0].kind, channelWidth: s.project.channels[0].width, groupKind: s.project.groups[0].kind, groupColor: s.project.groups[0].color };
+      return { channelKind: s.project.channels[0].kind, channelWidth: s.project.channels[0].width, channelColor: s.project.channels[0].color };
     });
-    check('B: импорт — неизвестный тип канала/вид и цвет шлейфа нормализуются', dirty.channelKind === 'кабель-канал' && dirty.channelWidth >= 5 && dirty.groupKind === 'ШС' && /^#[0-9a-fA-F]{6}$/.test(dirty.groupColor), JSON.stringify(dirty));
+    check('B: импорт — неизвестный тип канала и «чужой» цвет нормализуются', dirty.channelKind === 'кабель-канал' && dirty.channelWidth >= 5 && dirty.channelColor === '', JSON.stringify(dirty));
 
     /* ---------- B14. Нумерация после удаления первой стены (BUG-4 fix) ---------- */
     section('B14. Нумерация обозначений после удаления первой стены');
@@ -1468,7 +1358,7 @@ async function main() {
     await page.locator('#modal-actions button', { hasText: 'Подтвердить' }).click();
     await sleep(600);
     const fresh = await getState(page);
-    check('B: «Новый проект» создаёт пустой проект с одной стеной', fresh.walls === 1 && fresh.devices === 0 && fresh.channels === 0 && fresh.groups === 0, JSON.stringify({ walls: fresh.walls, devices: fresh.devices }));
+    check('B: «Новый проект» создаёт пустой проект с одной стеной', fresh.walls === 1 && fresh.devices === 0 && fresh.channels === 0 && (fresh.dims ?? 0) === 0, JSON.stringify({ walls: fresh.walls, devices: fresh.devices, dims: fresh.dims }));
     const wallDeleteButtons = await page.locator('#walls-list .wdel').count();
     check('B: кнопка удаления есть у единственной стены', wallDeleteButtons === 1);
     await page.locator('#walls-list .wdel').click();

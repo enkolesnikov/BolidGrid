@@ -314,13 +314,5 @@ export const CHANNEL_KINDS = [
 /** Допустимые id типов трасс (для валидации импорта). */
 export const CHANNEL_KIND_IDS = CHANNEL_KINDS.map((k) => k.id);
 
-/** Виды объединений устройств. */
-export const GROUP_KINDS = [
-  { id: 'ШС', label: 'Шлейф сигнализации (ШС)', color: '#f59e0b' },
-  { id: 'СОУЭ', label: 'Линия СОУЭ', color: '#22c55e' },
-  { id: 'Питание', label: 'Линия питания 12/220 В', color: '#ef4444' },
-  { id: 'Адрес', label: 'Адресная линия (ДПЛС)', color: '#8b5cf6' },
-  { id: 'Прочее', label: 'Прочее объединение', color: '#38bdf8' },
-];
-
-export const GROUP_COLORS = ['#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#38bdf8', '#ec4899', '#14b8a6', '#f97316'];
+/** Цвета короба (быстрый выбор в свойствах трассы). */
+export const CHANNEL_COLORS = ['#94a3b8', '#64748b', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#475569'];

@@ -2,10 +2,7 @@
  * panels.js — панели интерфейса: палитра устройств, стены, свойства,
  * объединения (шлейфы/линии), спецификация (BOM) и кабельный журнал.
  */
-import {
-  MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, GROUP_KINDS, GROUP_COLORS,
-  modelThumb,
-} from './catalog.js';
+import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
 
 const el = (html) => {
@@ -120,7 +117,6 @@ export class Panels {
     this.renderWallTabs();
     this.renderPalette();
     this.renderInspector();
-    this.renderLoops();
     this.renderSpec();
     this.renderJournal();
     this.updateToolButtons();
@@ -134,16 +130,14 @@ export class Panels {
       case 'project':
         this.renderPalette();
         this.renderInspector();
-        this.renderLoops();
-        this.renderSpec();
+            this.renderSpec();
         this.renderJournal();
         this.renderWalls();
         this.renderWallTabs();
         break;
       case 'selection':
         this.renderInspector();
-        this.renderLoops();
-        break;
+            break;
       case 'wall':
         this.renderWalls();
         this.renderWallTabs();
@@ -268,13 +262,11 @@ export class Panels {
     }
     const devices = this.store.selectedDevices();
     const channels = this.store.selectedChannels();
-    const groups = this.store.selectedGroups();
     const dims = this.store.selectedDimensions();
-    if (devices.length === 1 && !channels.length && !groups.length && !dims.length) box.innerHTML = this._deviceInspector(devices[0]);
-    else if (channels.length === 1 && !devices.length && !groups.length && !dims.length) box.innerHTML = this._channelInspector(channels[0]);
-    else if (groups.length === 1 && !devices.length && !channels.length && !dims.length) box.innerHTML = this._groupInspector(groups[0]);
-    else if (dims.length === 1 && !devices.length && !channels.length && !groups.length) box.innerHTML = this._dimensionInspector(dims[0]);
-    else box.innerHTML = this._multiInspector(devices, channels, groups, dims);
+    if (devices.length === 1 && !channels.length && !dims.length) box.innerHTML = this._deviceInspector(devices[0]);
+    else if (channels.length === 1 && !devices.length && !dims.length) box.innerHTML = this._channelInspector(channels[0]);
+    else if (dims.length === 1 && !devices.length && !channels.length) box.innerHTML = this._dimensionInspector(dims[0]);
+    else box.innerHTML = this._multiInspector(devices, channels, dims);
     this._wireInspector(box);
   }
 
@@ -285,9 +277,7 @@ export class Panels {
         <dt>Стен</dt><dd>${stats.walls}</dd>
         <dt>Устройств</dt><dd>${stats.devices}</dd>
         <dt>Кабельных каналов</dt><dd>${stats.channels} · ${m(stats.channelLen)}</dd>
-        <dt>Опусков</dt><dd>${stats.drops} · ${m(stats.dropLen)}</dd>
-        <dt>Объединений</dt><dd>${stats.groups}</dd>
-        <dt>Кабеля всего</dt><dd>${m(stats.channelLen + stats.dropLen)}</dd>
+        <dt>Длина короба</dt><dd>${m(stats.channelLen)}</dd>
         <dt>Размерных линий</dt><dd>${stats.dims}</dd>
       </dl>
       <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.6">
@@ -298,17 +288,12 @@ export class Panels {
 
   _projectStats() {
     const st = this.store;
-    const drops = st.computeDrops();
     const channelLen = st.project.channels.reduce((a, c) => a + st.channelLength(c), 0);
-    const dropLen = drops.reduce((a, d) => a + d.length, 0);
     return {
       walls: st.project.walls.length,
       devices: st.project.devices.length,
       channels: st.project.channels.length,
       channelLen,
-      drops: drops.length,
-      dropLen,
-      groups: st.project.groups.length,
       dims: (st.project.dimensions || []).length,
     };
   }
@@ -318,7 +303,6 @@ export class Panels {
     const modelOptions = MODELS.map(
       (mm2) => `<option value="${mm2.id}" ${mm2.id === model.id ? 'selected' : ''}>${escAll(mm2.name)}</option>`
     ).join('');
-    const groups = this.store.project.groups;
     return `<div class="prop-title"><span class="badge">${escAll(d.tag || '—')}</span><h4>${escAll(model.name)}</h4></div>
       <div class="form">
         <div class="row2">
@@ -337,11 +321,6 @@ export class Panels {
           <label>Габарит, мм<input value="${model.w} × ${model.h}" disabled></label>
         </div>
         <label>Примечание<input data-f="note" value="${escAll(d.note)}" placeholder="прим."></label>
-        <label class="switch" style="color:#9fb6d6"><input type="checkbox" data-f="noDrop" ${d.noDrop ? 'checked' : ''}><span>Не подключать к кабель-каналу (без опуска)</span></label>
-        <div>
-          <div class="pal-group-title">Шлейфы / линии</div>
-          ${groups.length ? groups.map((g) => `<label class="switch" style="display:flex;margin:2px 0;color:#cfe0f5"><input type="checkbox" data-group="${g.id}" ${(d.groupIds || []).includes(g.id) ? 'checked' : ''}><span style="color:${g.color}">■</span><span>${escAll(g.name)}</span></label>`).join('') : '<div class="empty">Объединений пока нет.</div>'}
-        </div>
         <div class="section-actions">
           <button class="btn tiny" data-act="dup">Дублировать</button>
           <button class="btn tiny" data-act="rotate">Повернуть</button>
@@ -361,40 +340,20 @@ export class Panels {
           <label>Ширина, мм<input data-f="width" type="number" step="5" value="${c.width}"></label>
           <label>Длина, мм<input value="${Math.round(this.store.channelLength(c))}" disabled></label>
         </div>
+        <div>
+          <div class="pal-group-title">Цвет короба</div>
+          <div class="swatches">
+            ${CHANNEL_COLORS.map((col) => `<button class="swatch ${(c.color || def.color).toLowerCase() === col ? 'active' : ''}" data-ch-color="${col}" style="background:${col}" title="${col}"></button>`).join('')}
+            <label class="swatch-custom" title="Свой цвет"><input type="color" data-f="color" value="${escAll(c.color || def.color)}"></label>
+          </div>
+        </div>
         <label>Кабель<select data-f="cableModelId">
           <option value="">— не задан —</option>
           ${cables.map((v) => `<option value="${escAll(v)}" ${v === c.cableModelId ? 'selected' : ''}>${escAll(v)}</option>`).join('')}
         </select></label>
-        <label>Подпись<input data-f="label" value="${escAll(c.label)}" placeholder="Лоток Л-1"></label>
         <div class="hintline">Точек в трассе: ${c.points.length}. Тяните вершины на стене, чтобы изменить трассу.</div>
         <div class="section-actions">
           <button class="btn tiny" data-act="del">Удалить канал</button>
-        </div>
-      </div>`;
-  }
-
-  _groupInspector(g) {
-    const members = g.deviceIds.map((id) => this.store.getDevice(id)).filter(Boolean);
-    const len = this._groupLength(g);
-    return `<div class="prop-title"><span class="badge" style="background:${g.color}22;border-color:${g.color}66;color:${g.color}">${escAll(g.kind)}</span><h4>${escAll(g.name)}</h4></div>
-      <div class="form">
-        <label>Название<input data-f="name" value="${escAll(g.name)}"></label>
-        <label>Вид<select data-f="kind">${GROUP_KINDS.map((k) => `<option value="${k.id}" ${k.id === g.kind ? 'selected' : ''}>${escAll(k.label)}</option>`).join('')}</select></label>
-        <div>
-          <div class="pal-group-title">Цвет</div>
-          <div class="swatches">${GROUP_COLORS.map((col) => `<button class="swatch ${col === g.color ? 'active' : ''}" data-color="${col}" style="background:${col}" title="${col}"></button>`).join('')}</div>
-        </div>
-        <label>Примечание<input data-f="note" value="${escAll(g.note)}" placeholder="напр. шлейф №1, ДПЛС-1"></label>
-        <dl class="kv">
-          <dt>Устройств</dt><dd>${members.length}</dd>
-          <dt>Длина линий</dt><dd>${m(len)}</dd>
-        </dl>
-        <div class="pal-group-title">Состав</div>
-        <div class="loop-devices">${members.map((d) => `<span class="chip">${escAll(d.tag || getModel(d.modelId).name)}</span>`).join('') || '<span class="empty">пусто</span>'}</div>
-        <div class="section-actions">
-          <button class="btn tiny" data-act="add-selected">Добавить выбранные устройства</button>
-          <button class="btn tiny" data-act="focus">Показать</button>
-          <button class="btn tiny danger" data-act="del">Удалить объединение</button>
         </div>
       </div>`;
   }
@@ -420,19 +379,17 @@ export class Panels {
       </div>`;
   }
 
-  _multiInspector(devices, channels, groups, dims = []) {
-    const total = devices.length + channels.length + groups.length + dims.length;
+  _multiInspector(devices, channels, dims = []) {
+    const total = devices.length + channels.length + dims.length;
     return `<div class="prop-title"><h4>Выбрано: ${total}</h4></div>
       <dl class="kv">
         <dt>Устройств</dt><dd>${devices.length}</dd>
         <dt>Каналов</dt><dd>${channels.length}</dd>
-        <dt>Объединений</dt><dd>${groups.length}</dd>
         <dt>Размеров</dt><dd>${dims.length}</dd>
       </dl>
       <div class="form">
         <div class="hintline">Shift+клик — добавить/убрать из выделения, рамка — групповое выделение.</div>
         <div class="section-actions">
-          <button class="btn tiny" data-act="group">Объединить в шлейф/линию</button>
           <button class="btn tiny" data-act="dup">Дублировать устройства</button>
           <button class="btn tiny" data-act="rotate">Повернуть устройства</button>
           <button class="btn tiny danger" data-act="del">Удалить выделенное</button>
@@ -445,7 +402,6 @@ export class Panels {
     const devices = st.selectedDevices();
     const single = devices.length === 1 ? devices[0] : null;
     const channel = st.selectedChannels()[0];
-    const group = st.selectedGroups()[0];
 
     box.querySelectorAll('[data-f]').forEach((inp) => {
       inp.addEventListener('change', () => {
@@ -458,14 +414,6 @@ export class Panels {
         st.updateDevice(single.id, { [f]: v });
       });
     });
-    box.querySelectorAll('[data-group]').forEach((inp) => {
-      inp.addEventListener('change', () => {
-        if (!single) return;
-        const gid = inp.dataset.group;
-        if (inp.checked) st.addDevicesToGroup(gid, [single.id]);
-        else st.removeDevicesFromGroup(gid, [single.id]);
-      });
-    });
     if (channel) {
       box.querySelectorAll('[data-f]').forEach((inp) => {
         inp.addEventListener('change', () => {
@@ -473,6 +421,9 @@ export class Panels {
           let v = inp.type === 'number' ? parseFloat(inp.value) || 0 : inp.value;
           st.updateChannel(channel.id, { [f]: v });
         });
+      });
+      box.querySelectorAll('[data-ch-color]').forEach((sw) => {
+        sw.addEventListener('click', () => st.updateChannel(channel.id, { color: sw.dataset.chColor }));
       });
     }
     if (st.selectedDimensions().length === 1) {
@@ -497,24 +448,13 @@ export class Panels {
       }
       return;
     }
-    if (group) {
-      box.querySelectorAll('[data-f]').forEach((inp) => {
-        inp.addEventListener('change', () => {
-          const f = inp.dataset.f;
-          st.updateGroup(group.id, { [f]: inp.value });
-        });
-      });
-      box.querySelectorAll('[data-color]').forEach((sw) => {
-        sw.addEventListener('click', () => st.updateGroup(group.id, { color: sw.dataset.color }));
-      });
-    }
 
     for (const btn of box.querySelectorAll('[data-act]')) {
-      btn.addEventListener('click', () => this._inspectorAction(btn.dataset.act, { single, channel, group, devices }));
+      btn.addEventListener('click', () => this._inspectorAction(btn.dataset.act, { single, channel, devices }));
     }
   }
 
-  _inspectorAction(act, { single, channel, group, devices }) {
+  _inspectorAction(act, { single, channel, devices }) {
     const st = this.store;
     switch (act) {
       case 'dup':
@@ -528,24 +468,9 @@ export class Panels {
       case 'del':
         st.removeSelection();
         break;
-      case 'group':
-        this.openGroupDialog(devices.map((d) => d.id));
-        break;
       case 'focus':
         if (single) this.editor.focusOn(single.x, single.y, 900);
-        if (group) this.editor.focusOnGroup(group);
         break;
-      case 'add-selected': {
-        if (!group) break;
-        const ids = st.selectedDevices().map((d) => d.id);
-        if (!ids.length) {
-          this.toast('Выделите устройства на стене (Shift+клик) и нажмите снова', true);
-          break;
-        }
-        st.addDevicesToGroup(group.id, ids);
-        this.toast(`В «${group.name}» добавлено устройств: ${ids.length}`);
-        break;
-      }
       default:
         break;
     }
@@ -558,114 +483,12 @@ export class Panels {
     return [...set];
   }
 
-  _groupLength(g) {
-    const pts = g.deviceIds
-      .map((id) => this.store.getDevice(id))
-      .filter(Boolean)
-      .map((d) => {
-        const model = getModel(d.modelId);
-        return [d.x + model.w / 2, d.y + model.h / 2];
-      });
-    return pts.length > 1 ? polylineLength(pts) : 0;
-  }
-
-  /* ================= шлейфы / линии ================= */
-  renderLoops() {
-    const box = this.$('tab-loops');
-    if (!box) return;
-    const groups = this.store.project.groups;
-    const head = `<div class="prop-title"><h4>Объединения устройств</h4><span class="badge">${groups.length}</span></div>
-      <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.55;margin-bottom:10px">
-        Выделите устройства на стене (рамкой или Shift+клик) и нажмите «Объединить» — они станут шлейфом,
-        линией СОУЭ или адресной линией. Устройства одного объединения связаны цветной линией.
-      </div>
-      <div class="section-actions" style="margin-bottom:10px">
-        <button class="btn tiny" data-loop-act="new">Объединить выделенные (${this.store.selectedDevices().length})</button>
-      </div>`;
-    if (!groups.length) {
-      box.innerHTML = head + `<div class="empty">Объединений пока нет. Создайте шлейф из выделенных устройств.</div>`;
-      return;
-    }
-    box.innerHTML = head + groups
-      .map((g) => {
-        const devs = g.deviceIds.map((id) => this.store.getDevice(id)).filter(Boolean);
-        const len = this._groupLength(g);
-        return `<div class="loop-card">
-          <div class="loop-head"><span class="loop-dot" style="background:${g.color}"></span><b>${escAll(g.name)}</b>
-            <span class="pill">${escAll(g.kind)}</span></div>
-          <div class="loop-meta"><span>устройств: ${devs.length}</span><span>длина линий: ${m(len)}</span>${g.note ? `<span>${escAll(g.note)}</span>` : ''}</div>
-          <div class="loop-devices">${devs.slice(0, 18).map((d) => `<span class="chip">${escAll(d.tag || getModel(d.modelId).name)}</span>`).join('')}${devs.length > 18 ? `<span class="chip">+${devs.length - 18}</span>` : ''}</div>
-          <div class="loop-actions">
-            <button class="btn tiny" data-loop-act="select" data-id="${g.id}">Выбрать</button>
-            <button class="btn tiny" data-loop-act="add" data-id="${g.id}">+ выделенные</button>
-            <button class="btn tiny danger" data-loop-act="del" data-id="${g.id}">Удалить</button>
-          </div>
-        </div>`;
-      })
-      .join('');
-    box.querySelectorAll('[data-loop-act]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const act = b.dataset.loopAct;
-        const id = b.dataset.id;
-        if (act === 'new') this.openGroupDialog(this.store.selectedDevices().map((d) => d.id));
-        else if (act === 'select') {
-          this.store.selectOne('group', id);
-          this.editor.focusOnGroup(this.store.getGroup(id));
-        } else if (act === 'add') {
-          const g = this.store.getGroup(id);
-          const sel = this.store.selectedDevices().map((d) => d.id);
-          if (g && sel.length) this.store.addDevicesToGroup(id, sel);
-          else this.toast('Сначала выделите устройства на стене');
-        } else if (act === 'del') {
-          this.confirm(`Удалить объединение «${this.store.getGroup(id)?.name}»?`, () => this.store.removeGroup(id), 'Удалить');
-        }
-      });
-    });
-  }
-
-  openGroupDialog(deviceIds = []) {
-    const ids = deviceIds.filter((id) => this.store.getDevice(id));
-    const n = this.store.project.groups.length;
-    const defaultKind = GROUP_KINDS[0];
-    const body = `<div class="form">
-      <label>Название<input id="grp-name" value="Шлейф ${n + 1}" autofocus></label>
-      <label>Вид объединения<select id="grp-kind">${GROUP_KINDS.map((k, i) => `<option value="${k.id}" ${i === 0 ? 'selected' : ''}>${escAll(k.label)}</option>`).join('')}</select></label>
-      <div><div class="pal-group-title">Цвет</div><div class="swatches" id="grp-colors">${GROUP_COLORS.map((c, i) => `<button class="swatch ${i === 0 ? 'active' : ''}" data-color="${c}" style="background:${c}"></button>`).join('')}</div></div>
-      <label>Примечание<input id="grp-note" placeholder="адрес шлейфа, № ДПЛС"></label>
-      <div class="hintline">Устройств в объединении: <b>${ids.length}</b>${ids.length ? '' : ' — выделите устройства на стене, чтобы добавить их в шлейф.'}</div>
-    </div>`;
-    let color = GROUP_COLORS[0];
-    this.openModal('Новое объединение устройств', body, [
-      {
-        label: 'Создать',
-        cls: 'accent',
-        onClick: (close) => {
-          const name = document.getElementById('grp-name').value.trim() || `Шлейф ${n + 1}`;
-          const kind = document.getElementById('grp-kind').value;
-          const note = document.getElementById('grp-note').value.trim();
-          close();
-          this.store.createGroup({ name, kind, color, deviceIds: ids, note });
-          this.toast(`Объединение «${name}» создано`);
-        },
-      },
-      { label: 'Отмена', onClick: (close) => close() },
-    ]);
-    const colors = document.getElementById('grp-colors');
-    colors?.addEventListener('click', (e) => {
-      const sw = e.target.closest('[data-color]');
-      if (!sw) return;
-      color = sw.dataset.color;
-      colors.querySelectorAll('.swatch').forEach((x) => x.classList.toggle('active', x === sw));
-    });
-  }
-
   /* ================= спецификация (BOM) ================= */
   renderSpec() {
     const box = this.$('tab-spec');
     if (!box) return;
     const spec = this.store.spec;
     const placed = this.store.placedCountBySpecPos();
-    const drops = this.store.computeDrops();
     const journal = this.buildJournalRows();
     const cableIf = new Map(journal.totalsByCable.map((r) => [norm(r.cable), r]));
     const rows = [];
@@ -791,45 +614,30 @@ export class Panels {
   /* ================= кабельный журнал ================= */
   buildJournalRows() {
     const st = this.store;
-    const drops = st.computeDrops();
-    const dropByChannel = new Map();
-    for (const d of drops) {
-      if (!dropByChannel.has(d.channelId)) dropByChannel.set(d.channelId, { count: 0, length: 0 });
-      const acc = dropByChannel.get(d.channelId);
-      acc.count++;
-      acc.length += d.length;
-    }
     const rows = [];
     for (const c of st.project.channels) {
       const wall = st.project.walls.find((w) => w.id === c.wallId);
-      const acc = dropByChannel.get(c.id) || { count: 0, length: 0 };
+      const length = st.channelLength(c);
       rows.push({
         id: c.id,
         wall: wall?.name || '',
         kind: c.kind,
+        width: c.width,
+        color: c.color || (CHANNEL_KINDS.find((k) => k.id === c.kind) || CHANNEL_KINDS[0]).color,
         cable: c.cableModelId || '',
-        label: c.label || '',
-        length: st.channelLength(c),
-        drops: acc.count,
-        dropLength: acc.length,
-        total: st.channelLength(c) + acc.length,
+        length,
       });
     }
     const byCable = new Map();
     for (const r of rows) {
       const key = r.cable || '— не задан —';
-      byCable.set(key, (byCable.get(key) || 0) + r.total);
+      byCable.set(key, (byCable.get(key) || 0) + r.length);
     }
     const totalsByCable = [...byCable.entries()].map(([cable, length]) => ({ cable, length }));
     return {
       rows,
       totalsByCable,
-      totals: {
-        length: rows.reduce((a, r) => a + r.length, 0),
-        drops: rows.reduce((a, r) => a + r.drops, 0),
-        dropLength: rows.reduce((a, r) => a + r.dropLength, 0),
-        total: rows.reduce((a, r) => a + r.total, 0),
-      },
+      totals: { length: rows.reduce((a, r) => a + r.length, 0) },
     };
   }
 
@@ -838,29 +646,26 @@ export class Panels {
     if (!box) return;
     const { rows, totals, totalsByCable } = this.buildJournalRows();
     const st = this.store;
-    box.innerHTML = `<div class="prop-title"><h4>Кабельный журнал</h4><span class="badge">${rows.length} трасс</span></div>
+    box.innerHTML = `<div class="prop-title"><h4>Длина короба</h4><span class="badge">${rows.length} трасс</span></div>
       <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.5;margin-bottom:8px">
-        Длина трассы считается по ломаной канала; опуски — кратчайшее расстояние от нижней точки устройства до канала.
+        Длина трассы считается по ломаной линии короба с учётом реальной ширины. Итог — сколько короба нужно закупить.
       </div>
       <table class="table">
-        <thead><tr><th>№</th><th>Стена / тип</th><th>Кабель</th><th class="num">Трасса, м</th><th class="num">Опусков</th><th class="num">Опуски, м</th><th class="num">Итого, м</th></tr></thead>
+        <thead><tr><th>№</th><th>Стена / трасса</th><th>Кабель</th><th class="num">Длина, м</th></tr></thead>
         <tbody>
         ${rows
           .map(
             (r, i) => `<tr>
           <td class="num">${i + 1}</td>
-          <td>${escAll(r.wall)}<br><span class="muted">${escAll(r.kind)}${r.label ? ` · ${escAll(r.label)}` : ''}</span></td>
+          <td><span class="color-dot" style="background:${r.color}"></span>${escAll(r.wall)}<br><span class="muted">${escAll((CHANNEL_KINDS.find((k) => k.id === r.kind) || CHANNEL_KINDS[0]).label)} · ${r.width ?? ''}</span></td>
           <td>${escAll(r.cable || '—')}</td>
-          <td class="num">${(r.length / 1000).toFixed(2)}</td>
-          <td class="num">${r.drops}</td>
-          <td class="num">${(r.dropLength / 1000).toFixed(2)}</td>
-          <td class="num"><b>${(r.total / 1000).toFixed(2)}</b></td>
+          <td class="num"><b>${(r.length / 1000).toFixed(2)}</b></td>
         </tr>`
           )
           .join('')}
         </tbody>
         <tfoot>
-          <tr class="total"><td colspan="3">Итого по проекту</td><td class="num">${(totals.length / 1000).toFixed(2)}</td><td class="num">${totals.drops}</td><td class="num">${(totals.dropLength / 1000).toFixed(2)}</td><td class="num">${(totals.total / 1000).toFixed(2)}</td></tr>
+          <tr class="total"><td colspan="3">Итого короба</td><td class="num">${(totals.length / 1000).toFixed(2)} м</td></tr>
         </tfoot>
       </table>
       ${totalsByCable.length ? `<div class="pal-group-title">По маркам кабеля</div>
@@ -873,14 +678,20 @@ export class Panels {
     box.querySelectorAll('[data-journal-act]').forEach((b) =>
       b.addEventListener('click', () => {
         const lines = [
-          ['Кабельный журнал'],
-          ['№', 'Стена', 'Тип трассы', 'Кабель', 'Трасса, м', 'Опусков', 'Опуски, м', 'Итого, м'],
-          ...rows.map((r, i) => [i + 1, r.wall, r.kind, r.cable, (r.length / 1000).toFixed(2), r.drops, (r.dropLength / 1000).toFixed(2), (r.total / 1000).toFixed(2)]),
-          ['', '', '', 'ИТОГО', (totals.length / 1000).toFixed(2), totals.drops, (totals.dropLength / 1000).toFixed(2), (totals.total / 1000).toFixed(2)],
+          ['Ведомость короба'],
+          ['№', 'Стена', 'Тип трассы', 'Кабель', 'Длина, м'],
+          ...rows.map((r, i) => [
+            i + 1,
+            r.wall,
+            (CHANNEL_KINDS.find((k) => k.id === r.kind) || CHANNEL_KINDS[0]).label,
+            r.cable,
+            (r.length / 1000).toFixed(2),
+          ]),
+          ['', '', '', 'ИТОГО', (totals.length / 1000).toFixed(2)],
         ];
         const name = (st.project.meta.name || 'project').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
-        download(`${name}_кабельный_журнал.csv`, toCSV(lines), 'text/csv');
-        this.toast('Кабельный журнал выгружен');
+        download(`${name}_короб.csv`, toCSV(lines), 'text/csv');
+        this.toast('Ведомость короба выгружена');
       })
     );
   }
