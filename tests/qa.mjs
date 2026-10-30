@@ -332,7 +332,7 @@ async function main() {
     const appA = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page: pageA, errors: errorsA } = appA;
     const sA0 = await getState(pageA);
-    check('демо-проект загружен при старте', sA0.devices === 14 && sA0.walls === 2 && sA0.channels === 5 && sA0.dims === 4, JSON.stringify(sA0));
+    check('демо-проект загружен при старте', sA0.devices === 10 && sA0.walls === 2 && sA0.channels === 5 && sA0.dims === 4, JSON.stringify(sA0));
     check('спецификация загружена (data/spec.json)', await pageA.evaluate(() => !!window.BolidGrid.store.spec));
 
     const metrics = () =>
@@ -469,10 +469,10 @@ async function main() {
     const appB = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page, errors: errorsB } = appB;
     const s0 = await getState(page);
-    check('B: стартовое демо 14 приборов / 5 коробов / 4 размера / 2 стены', s0.devices === 14 && s0.channels === 5 && s0.dims === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, dims: s0.dims, w: s0.walls }));
+    check('B: стартовое демо 10 приборов / 5 коробов / 4 размера / 2 стены', s0.devices === 10 && s0.channels === 5 && s0.dims === 4 && s0.walls === 2, JSON.stringify({ d: s0.devices, c: s0.channels, dims: s0.dims, w: s0.walls }));
 
     const paletteIds = await page.$$eval('#palette-list .pal-item', (els) => els.map((e) => e.dataset.model));
-    check('B: палитра содержит ровно 15 моделей (приборы и оповещатели)', paletteIds.length === 15, `count=${paletteIds.length}`);
+    check('B: палитра содержит ровно 15 моделей (приборы и оповещатели)', paletteIds.length === 12, `count=${paletteIds.length}`);
     check('B: модели палитры совпадают с каталогом', catalogIds.every((id) => paletteIds.includes(id)), JSON.stringify(paletteIds.filter((id) => !catalogIds.includes(id))));
 
     let placedAll = true;
@@ -489,9 +489,9 @@ async function main() {
       if (st.devices !== prevCount + 1) placedAll = false;
       prevCount = st.devices;
     }
-    check('B: все 15 моделей размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
+    check('B: все 12 моделей размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
     const s20 = await getState(page);
-    check('B: после размещения 15 моделей устройств 29 (14+15)', s20.devices === 29 && s20.wallDevices === s0.wallDevices + 15, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
+    check('B: после размещения 12 моделей устройств 22 (10+12)', s20.devices === 22 && s20.wallDevices === s0.wallDevices + 12, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
     const placement = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const wallDevs = s.wallDevices;
@@ -507,19 +507,19 @@ async function main() {
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 40);
     const su = await getState(page);
-    check('B: 15×undo возвращает исходные 14 приборов', su.devices === 14, `devices=${su.devices}`);
+    check('B: 12×undo возвращает исходные 10 приборов', su.devices === 10, `devices=${su.devices}`);
     check('B: после 20×undo история пуста (canUndo=false)', su.canUndo === false && su.undoLen === 0, JSON.stringify({ canUndo: su.canUndo, undoLen: su.undoLen }));
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 60);
     const sExtra = await getState(page);
-    check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 14 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
+    check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 10 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+y'), 30);
     const sr = await getState(page);
-    check('B: 15×redo восстанавливает 29 приборов', sr.devices === 29, `devices=${sr.devices}`);
+    check('B: 12×redo восстанавливает 22 прибора', sr.devices === 22, `devices=${sr.devices}`);
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 30);
-    check('B: повторный 15×undo снова даёт 14 приборов', (await getState(page)).devices === 14);
+    check('B: повторный 12×undo снова даёт 10 приборов', (await getState(page)).devices === 10);
 
     /* ---------- B2. Перетаскивание устройства ---------- */
     section('B2. Перетаскивание устройства мышью');
@@ -729,7 +729,7 @@ async function main() {
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(450);
     const sDelWall = await getState(page);
-    check('B: удаление добавленной стены возвращает 2 стены и 14 приборов', sDelWall.walls === 2 && sDelWall.devices === 14, JSON.stringify({ walls: sDelWall.walls, devices: sDelWall.devices }));
+    check('B: удаление добавленной стены возвращает 2 стены и 10 приборов', sDelWall.walls === 2 && sDelWall.devices === 10, JSON.stringify({ walls: sDelWall.walls, devices: sDelWall.devices }));
     check('B: активной становится существующая стена', [wall1.id, wall2.id].includes(sDelWall.wallId), String(sDelWall.wallId));
 
     // удалить демо-стену с устройствами + undo
@@ -754,13 +754,13 @@ async function main() {
     });
     check(
       'B: удаление стены удаляет её устройства, короба и размеры',
-      sDeleteWall2.walls === 1 && sDeleteWall2.devices === 11 && sDeleteWall2.orphanChannels === 0 && sDeleteWall2.orphanDims === 0,
+      sDeleteWall2.walls === 1 && sDeleteWall2.devices === 7 && sDeleteWall2.orphanChannels === 0 && sDeleteWall2.orphanDims === 0,
       JSON.stringify(sDeleteWall2)
     );
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 100);
     const sUndoWall = await getState(page);
-    check('B: undo восстанавливает стену с устройствами', sUndoWall.walls === 2 && sUndoWall.devices === 14, JSON.stringify({ walls: sUndoWall.walls, devices: sUndoWall.devices }));
+    check('B: undo восстанавливает стену с устройствами', sUndoWall.walls === 2 && sUndoWall.devices === 10, JSON.stringify({ walls: sUndoWall.walls, devices: sUndoWall.devices }));
 
     /* ---------- B6. Наложение устройств / длинные подписи / XSS ---------- */
     section('B6. Наложение устройств, длинные подписи, XSS');

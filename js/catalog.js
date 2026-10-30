@@ -227,13 +227,13 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'molnia_exit', specPos: 8, kind: 'opoveshchatel_svet', symbol: 'molnia', tagText: 'ВЫХОД', w: 235, h: 95,
+    id: 'molnia_exit', specPos: 8, kind: 'opoveshchatel_svet', symbol: 'molnia', tagText: 'ВЫХОД', w: 235, h: 95, hidden: true,
     name: 'Молния-24 Ultra «ВЫХОД»', model: 'Молния-24 Ultra',
     full: 'Оповещатель охранно-пожарный световой «ВЫХОД» Молния-24 Ultra',
     vendor: 'ИП Раченков А. В.',
   }),
   M({
-    id: 'molnia_dir', specPos: 9, kind: 'opoveshchatel_svet', symbol: 'molnia', tagText: '→', w: 235, h: 95,
+    id: 'molnia_dir', specPos: 9, kind: 'opoveshchatel_svet', symbol: 'molnia', tagText: '→', w: 235, h: 95, hidden: true,
     name: 'Молния-24 Ultra «НАПРАВЛЕНИЕ»', model: 'Молния-24 Ultra',
     full: 'Оповещатель охранно-пожарный световой «НАПРАВЛЕНИЕ ДВИЖЕНИЯ» Молния-24 Ultra',
     vendor: 'ИП Раченков А. В.',
@@ -245,7 +245,7 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'kmo2k', specPos: 11, kind: 'korobka', symbol: 'korobka', w: 100, h: 100,
+    id: 'kmo2k', specPos: 11, kind: 'korobka', symbol: 'korobka', w: 100, h: 100, hidden: true,
     name: 'КМ-О(2К) исп.1', model: 'КМ-О(2К) исп.1',
     full: 'Коробка монтажная огнестойкая КМ-О(2К) исп.1',
     vendor: 'ЛТ «ГЕФЕСТ»',

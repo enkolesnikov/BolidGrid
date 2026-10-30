@@ -173,10 +173,10 @@ async function main() {
       }));
       check(`${vp.label}: «Палитра» открывает шторку`, /sheet-palette/.test(pal.cls) && pal.leftY < vp.height * 0.6, JSON.stringify(pal));
       check(`${vp.label}: шторка палитры над таб-баром`, pal.leftBottom <= layout.bar.y + 2, `${pal.leftBottom} vs ${layout.bar.y}`);
-      check(`${vp.label}: в палитре 15 моделей`, pal.items === 15, `items=${pal.items}`);
+      check(`${vp.label}: в палитре 12 моделей`, pal.items === 12, `items=${pal.items}`);
       check(`${vp.label}: затемнение активно`, pal.scrim === 'block');
 
-      await page.locator('#palette-list .pal-item[data-model="molnia_exit"]').tap();
+      await page.locator('#palette-list .pal-item[data-model="sp2"]').tap();
       await sleep(350);
       const afterArm = await state();
       check(`${vp.label}: выбор модели включает размещение и закрывает шторку`, afterArm.tool === 'place' && afterArm.sheet === '', JSON.stringify({ tool: afterArm.tool, sheet: afterArm.sheet }));
