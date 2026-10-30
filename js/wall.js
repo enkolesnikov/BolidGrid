@@ -504,7 +504,7 @@ export class WallEditor {
       const ch = this.store.getChannel(this.drag.channelId);
       if (ch) {
         const pts = ch.points.slice();
-        pts[this.drag.index] = [Math.round(clamp(this.snap(floor[0]), 0, this.wall.width)), Math.round(clamp(this.snap(floor[1]), 0, this.wall.height))];
+        pts[this.drag.index] = this._constrainVertex(pts, this.drag.index, floor);
         ch.points = pts;
         this.store.emit('live');
       }
@@ -818,6 +818,38 @@ export class WallEditor {
 
     }
     return out;
+  }
+
+  /** вершина короба: соседние сегменты обязаны оставаться строго горизонтальными/вертикальными */
+  _constrainVertex(points, index, floor) {
+    const W = this.wall.width;
+    const H = this.wall.height;
+    let x = clamp(this.snap(floor[0]), 0, W);
+    let y = clamp(this.snap(floor[1]), 0, H);
+    const prev = index > 0 ? points[index - 1] : null;
+    const next = index < points.length - 1 ? points[index + 1] : null;
+    if (prev && next) {
+      if (prev[1] === next[1]) {
+        y = prev[1]; // участок горизонтальный
+      } else if (prev[0] === next[0]) {
+        x = prev[0]; // участок вертикальный
+      } else {
+        // поворот: только два возможных угла
+        const c1 = [next[0], prev[1]];
+        const c2 = [prev[0], next[1]];
+        const d1 = Math.hypot(x - c1[0], y - c1[1]);
+        const d2 = Math.hypot(x - c2[0], y - c2[1]);
+        [x, y] = d1 <= d2 ? c1 : c2;
+      }
+    } else {
+      const n = prev || next;
+      if (n) {
+        // свободный конец: сегмент остаётся прямым (выбираем ориентацию по движению)
+        if (Math.abs(x - n[0]) >= Math.abs(y - n[1])) y = n[1];
+        else x = n[0];
+      }
+    }
+    return [Math.round(clamp(x, 0, W)), Math.round(clamp(y, 0, H))];
   }
 
   _polylineMid(points) {

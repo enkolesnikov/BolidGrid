@@ -503,6 +503,22 @@ export class Store {
   }
 }
 
+/** Привести ломаную короба к горизонтальным/вертикальным сегментам. */
+function orthoPoints(points) {
+  const pts = points.map((p) => [Math.round(+p[0] || 0), Math.round(+p[1] || 0)]);
+  if (!pts.length) return pts;
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const [px, py] = out[out.length - 1];
+    let [x, y] = pts[i];
+    if (x === px && y === py) continue;
+    if (Math.abs(x - px) >= Math.abs(y - py)) y = py;
+    else x = px;
+    out.push([x, y]);
+  }
+  return out;
+}
+
 /** Проверка/починка проекта из localStorage/файла. */
 export function sanitizeProject(raw) {
   const base = createProject();
@@ -542,7 +558,7 @@ export function sanitizeProject(raw) {
       kind: CHANNEL_KIND_IDS.includes(c.kind) ? c.kind : CHANNEL_KIND_IDS[0],
       width: clamp(+c.width || 100, 5, 600),
       color: /^#[0-9a-fA-F]{3,8}$/.test(String(c.color || '')) ? String(c.color) : '',
-      points: c.points.map((p) => [ +p[0] || 0, +p[1] || 0 ]),
+      points: orthoPoints(c.points),
       cableModelId: String(c.cableModelId ?? ''),
     }));
   const dimensions = (Array.isArray(raw.dimensions) ? raw.dimensions : [])

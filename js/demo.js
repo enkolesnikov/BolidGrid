@@ -37,29 +37,23 @@ export function buildDemoProject() {
 
   /* ---------- стена 1: приборы и оповещатели ---------- */
   const sirius = device('sirius', wallA.id, 260, 1250, '1.1', { address: 'ППКУП «Сириус»' });
-  const akb = device('akb', wallA.id, 260, 760, '1.2', { address: 'АКБ 12 В 18 Ач' });
-  const sp2_1 = device('sp2', wallA.id, 900, 1750, '1.3', { address: 'СП2 №1 — световое оповещение' });
-  const sp2_2 = device('sp2', wallA.id, 1150, 1750, '1.4', { address: 'СП2 №2 — звуковое оповещение' });
-  const sp4 = device('sp4_220', wallA.id, 1450, 1650, '1.5', { address: 'СП4/220 — клапаны' });
-  const ar2 = device('ar2', wallA.id, 1800, 1780, '1.6', { address: 'АР2 исп.02' });
-  const mpn1 = device('mpn', wallA.id, 2050, 1860, '1.7');
-  const mpn2 = device('mpn', wallA.id, 2200, 1860, '1.8');
-  const kmo1 = device('kmo2k', wallA.id, 2600, 2350, '1.9', { note: 'огнестойкая коробка' });
-  const kmo2 = device('kmo2k', wallA.id, 2800, 2350, '1.10', { note: 'огнестойкая коробка' });
-  const exit1 = device('molnia_exit', wallA.id, 320, 2320, '1.11', { address: 'ВЫХОД' });
-  const dir1 = device('molnia_dir', wallA.id, 640, 2320, '1.12', { address: 'направление движения' });
-  const mayak1 = device('mayak', wallA.id, 3400, 2380, '1.13', { address: 'звуковое оповещение' });
-  const rip12 = device('rip12', wallA.id, 3600, 1700, '1.14', { address: 'РИП-12 исп.50' });
-  const bp12 = device('bp12', wallA.id, 3600, 1380, '1.15', { address: 'БП 12 В / 5 А' });
-  devices.push(sirius, akb, sp2_1, sp2_2, sp4, ar2, mpn1, mpn2, kmo1, kmo2, exit1, dir1, mayak1, rip12, bp12);
+  const sp2_1 = device('sp2', wallA.id, 900, 1750, '1.2', { address: 'СП2 №1 — световое оповещение' });
+  const sp2_2 = device('sp2', wallA.id, 1150, 1750, '1.3', { address: 'СП2 №2 — звуковое оповещение' });
+  const sp4 = device('sp4_220', wallA.id, 1450, 1650, '1.4', { address: 'СП4/220 — клапаны' });
+  const ar2 = device('ar2', wallA.id, 1800, 1780, '1.5', { address: 'АР2 исп.02' });
+  const kmo1 = device('kmo2k', wallA.id, 2600, 2350, '1.6', { note: 'огнестойкая коробка' });
+  const kmo2 = device('kmo2k', wallA.id, 2800, 2350, '1.7', { note: 'огнестойкая коробка' });
+  const exit1 = device('molnia_exit', wallA.id, 320, 2320, '1.8', { address: 'ВЫХОД' });
+  const dir1 = device('molnia_dir', wallA.id, 640, 2320, '1.9', { address: 'направление движения' });
+  const rip12 = device('rip12', wallA.id, 3600, 1700, '1.10', { address: 'РИП-12 исп.50' });
+  const bp12 = device('bp12', wallA.id, 3600, 1380, '1.11', { address: 'БП 12 В / 5 А' });
+  devices.push(sirius, sp2_1, sp2_2, sp4, ar2, kmo1, kmo2, exit1, dir1, rip12, bp12);
 
   /* ---------- стена 2: оповещение ---------- */
   const exit2 = device('molnia_exit', wallB.id, 240, 2250, '2.1');
   const dir2 = device('molnia_dir', wallB.id, 1400, 2250, '2.2', { address: 'направление движения' });
   const dir3 = device('molnia_dir', wallB.id, 4900, 2250, '2.3', { address: 'направление движения' });
-  const mayak2 = device('mayak', wallB.id, 2100, 2380, '2.4');
-  const mayak3 = device('mayak', wallB.id, 5600, 2380, '2.5');
-  devices.push(exit2, dir2, dir3, mayak2, mayak3);
+  devices.push(exit2, dir2, dir3);
 
   /* ---------- кабельные трассы: короба DKC 100×40 (ширина 100 мм) ---------- */
   const channels = [

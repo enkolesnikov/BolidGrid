@@ -72,16 +72,16 @@ async function main() {
       });
 
     const s0 = await state();
-    check('демо-проект загружен', s0.devices >= 20 && s0.walls === 2, JSON.stringify(s0));
+    check('демо-проект загружен', s0.devices >= 14 && s0.walls === 2, JSON.stringify(s0));
     check('спецификация загружена из data/spec.json', s0.spec);
 
     const paletteCount = await page.locator('#palette-list .pal-item').count();
-    check('палитра устройств содержит модели', paletteCount >= 18, `items=${paletteCount}`);
+    check('палитра устройств содержит модели', paletteCount >= 15, `items=${paletteCount}`);
     const specBadge = await page.locator('#palette-list .pal-item[data-model="sp2"]').innerText();
     check('в палитре показано «размещено / по спецификации»', /\/\s*4/.test(specBadge), specBadge.replace(/\s+/g, ' '));
 
     // --- размещение устройства из палитры ---
-    await page.locator('#palette-list .pal-item[data-model="mayak"]').click();
+    await page.locator('#palette-list .pal-item[data-model="molnia_exit"]').click();
     const toolAfterArm = (await state()).tool;
     check('выбор модели в палитре включает режим размещения', toolAfterArm === 'place', toolAfterArm);
     const wallBox = await page.locator('#wall').boundingBox();
@@ -141,6 +141,30 @@ async function main() {
     await sleep(250);
     const chSel = await page.evaluate(() => window.BolidGrid.store.selection[0]?.type);
     check('клик по трассе выделяет короб', chSel === 'channel', String(chSel));
+    // --- короб всегда прямой: тянем вершину по диагонали ---
+    const vx = await page.evaluate(() => {
+      const ed = window.BolidGrid.editor;
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      const pt = ed.svg.createSVGPoint();
+      pt.x = ch.points[1][0];
+      pt.y = ed.wall.height - ch.points[1][1];
+      const sp = pt.matrixTransform(ed.svg.getScreenCTM());
+      return { x: sp.x, y: sp.y };
+    });
+    await page.mouse.move(vx.x, vx.y);
+    await page.mouse.down();
+    await page.mouse.move(vx.x + 70, vx.y + 55, { steps: 8 });
+    await page.mouse.up();
+    await sleep(350);
+    const ortho = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      const segs = ch.points.slice(1).map((p, i) => [p[0] - ch.points[i][0], p[1] - ch.points[i][1]]);
+      return { points: ch.points, straight: segs.every(([dx, dy]) => dx === 0 || dy === 0) };
+    });
+    check('короб остаётся прямым: после перетаскивания вершины все сегменты H/V', ortho.straight, JSON.stringify(ortho));
+
     const swatchCount = await page.locator('#tab-props [data-ch-color]').count();
     check('в свойствах короба есть палитра цветов', swatchCount >= 6, `swatches=${swatchCount}`);
     await page.locator('#tab-props [data-ch-color]').nth(2).click();
@@ -323,16 +347,18 @@ async function main() {
           { id: 'd1', modelId: 'dip34a', wallId: 'w1', x: 99999, y: -50 },
           { id: 'd2', modelId: 'sp2', wallId: 'w1', x: 100, y: 100 },
         ],
-        channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 40, points: [[0, 0], [100, 0]], color: 'не-цвет', label: 'старое' }],
+        channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 100, points: [[0, 0], [400, 300], [400, 300], [900, 650]], color: 'не-цвет' }],
         dimensions: [{ id: 'dim1', wallId: 'w1', a: [0, 0], b: [500, 0] }],
       });
       const d = st.project.devices[0];
       const ch = st.project.channels[0];
-      return { x: d.x, y: d.y, models: st.project.devices.map((x) => x.modelId), chColor: ch.color, chLabel: ch.label, dims: st.project.dimensions.length };
+      const segs = ch.points.slice(1).map((p, i) => [p[0] - ch.points[i][0], p[1] - ch.points[i][1]]);
+      return { x: d.x, y: d.y, models: st.project.devices.map((x) => x.modelId), chColor: ch.color, chLabel: ch.label, dims: st.project.dimensions.length, chPoints: ch.points, chStraight: segs.every(([dx, dy]) => dx === 0 || dy === 0) };
     });
     check('импорт: координаты устройств ограничены стеной', imported.x <= 5900 && imported.y >= 0, JSON.stringify(imported));
     check('импорт: неизвестные модели заменяются на «прочее»', imported.models[1] === 'sp2' && imported.models.every(Boolean), JSON.stringify(imported.models));
     check('импорт: размерные линии и цвет короба нормализуются', imported.dims === 1 && imported.chColor === '' && imported.chLabel === undefined, JSON.stringify(imported));
+    check('импорт: диагональные трассы выпрямляются в горизонтальные/вертикальные', imported.chStraight && imported.chPoints.length >= 2, JSON.stringify({ points: imported.chPoints }));
 
     const tagState = await page.evaluate(() => {
       const st = window.BolidGrid.store;

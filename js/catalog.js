@@ -221,7 +221,7 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'mpn', specPos: 7, kind: 'modul', symbol: 'block', tagText: 'МПН', terminals: 2, w: 23, h: 9,
+    id: 'mpn', specPos: 7, kind: 'modul', symbol: 'block', tagText: 'МПН', terminals: 2, w: 23, h: 9, hidden: true,
     name: 'МПН', model: 'МПН',
     full: 'Модуль подключения нагрузки МПН',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -239,7 +239,7 @@ export const MODELS = [
     vendor: 'ИП Раченков А. В.',
   }),
   M({
-    id: 'mayak', specPos: 10, kind: 'opoveshchatel_zvuk', symbol: 'mayak', w: 95, h: 115,
+    id: 'mayak', specPos: 10, kind: 'opoveshchatel_zvuk', symbol: 'mayak', w: 95, h: 115, hidden: true,
     name: 'Маяк-24-3М', model: 'Маяк-24-3М',
     full: 'Оповещатель охранно-пожарный звуковой Маяк-24-3М',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -251,7 +251,7 @@ export const MODELS = [
     vendor: 'ЛТ «ГЕФЕСТ»',
   }),
   M({
-    id: 'akb', specPos: 12, kind: 'bp', symbol: 'akb', w: 181, h: 167,
+    id: 'akb', specPos: 12, kind: 'bp', symbol: 'akb', w: 181, h: 167, hidden: true,
     name: 'АКБ 12 В, 18 Ач', model: 'Delta HRL 12-18',
     full: 'Аккумуляторная батарея 12 В, 18 Ач Delta HRL 12-18',
     vendor: 'Delta',
