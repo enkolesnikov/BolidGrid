@@ -746,10 +746,10 @@ export class Panels {
     const st = this.store;
     const wall = wallId ? st.project.walls.find((w) => w.id === wallId) : null;
     const body = `<div class="form">
-      <label>Название стены<input id="wall-name" value="${escAll(wall?.name || `Стена ${st.project.walls.length + 1}`)}"></label>
+      <label>Название стены<input id="dlg-wall-name" value="${escAll(wall?.name || `Стена ${st.project.walls.length + 1}`)}"></label>
       <div class="row2">
-        <label>Длина стены, м<input id="wall-w" type="number" step="0.1" min="0.5" value="${(wall?.width ?? 6000) / 1000}"></label>
-        <label>Высота стены, м<input id="wall-h" type="number" step="0.1" min="0.5" value="${(wall?.height ?? 2700) / 1000}"></label>
+        <label>Длина стены, м<input id="dlg-wall-w" type="number" step="0.1" min="0.5" value="${(wall?.width ?? 6000) / 1000}"></label>
+        <label>Высота стены, м<input id="dlg-wall-h" type="number" step="0.1" min="0.5" value="${(wall?.height ?? 2700) / 1000}"></label>
       </div>
       <div class="hintline">Высота 2,7 м — типовая стена офиса; устройства ставятся на любой высоте от пола.</div>
     </div>`;
@@ -758,9 +758,9 @@ export class Panels {
         label: wall ? 'Применить' : 'Создать',
         cls: 'accent',
         onClick: (close) => {
-          const name = document.getElementById('wall-name').value.trim();
-          const width = Math.round((parseFloat(document.getElementById('wall-w').value) || 6) * 1000);
-          const height = Math.round((parseFloat(document.getElementById('wall-h').value) || 2.7) * 1000);
+          const name = document.getElementById('dlg-wall-name').value.trim();
+          const width = Math.round((parseFloat(document.getElementById('dlg-wall-w').value) || 6) * 1000);
+          const height = Math.round((parseFloat(document.getElementById('dlg-wall-h').value) || 2.7) * 1000);
           close();
           if (wall) st.updateWall(wall.id, { name, width, height });
           else st.addWall({ name, width, height });

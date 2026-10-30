@@ -42,7 +42,7 @@
         "width": 40,
         "points": [[120, 2580], [4080, 2580]],
         "cableModelId": "КПСнг(А)-FRHF 1x2x0,75",
-        "label": "КК-1"
+        "color": "#94a3b8"
       }
     ],
     "groups": [

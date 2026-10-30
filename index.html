@@ -81,12 +81,16 @@
     <div id="stage-toolbar" class="app-chrome">
       <div class="tool-group" role="group" aria-label="Инструменты">
         <button class="tool" data-tool="select" title="Выбор (V)" aria-label="Выбор"><span class="tool-ico">↖</span><span class="tool-label">Выбор</span></button>
-        <button class="tool" data-tool="channel" title="Кабельный канал (C)" aria-label="Кабельный канал"><span class="tool-ico">⎯</span><span class="tool-label">Канал</span></button>
+        <button class="tool" data-tool="channel" title="Короб / кабельный канал (C)" aria-label="Короб"><span class="tool-ico">⎯</span><span class="tool-label">Короб</span></button>
         <button class="tool" data-tool="pan" title="Панорама (H)" aria-label="Панорама"><span class="tool-ico">✥</span><span class="tool-label">Панорама</span></button>
         <button class="tool" data-tool="dimension" title="Размерная линия (M)" aria-label="Размерная линия"><span class="tool-ico">⟷</span><span class="tool-label">Размер</span></button>
       </div>
       <label class="switch channel-kind" title="Тип новой трассы">Трасса
         <select id="sel-channel-kind" class="mini-select"></select>
+      </label>
+      <span id="tool-colors" class="tool-colors" title="Цвет короба: для нового и для выделенного"></span>
+      <label class="wall-size" title="Размеры активной стены, метры">Стена
+        <input id="wall-w" type="number" step="0.1" min="0.5" max="60" inputmode="decimal">×<input id="wall-h" type="number" step="0.1" min="0.5" max="20" inputmode="decimal"> м
       </label>
       <label class="switch labels-ctl" title="Подписи устройств на листе">Подписи
         <select id="sel-labels" class="mini-select">
@@ -157,6 +161,14 @@
       <button class="btn" data-menu-action="edit-project">Свойства проекта…</button>
       <button class="btn" data-menu-action="reset">Новый проект</button>
       <button class="btn accent" data-menu-action="demo">Демо-проект</button>
+    </div>
+    <div class="menu-size">
+      <span>Размеры стены, м</span>
+      <input id="wall-w-mobile" type="number" step="0.1" min="0.5" max="60" inputmode="decimal">×<input id="wall-h-mobile" type="number" step="0.1" min="0.5" max="20" inputmode="decimal">
+    </div>
+    <div class="menu-colors">
+      <span>Цвет короба</span>
+      <span id="tool-colors-mobile" class="tool-colors"></span>
     </div>
     <label class="switch menu-labels">Подписи на листе
       <select id="sel-labels-mobile" class="mini-select">

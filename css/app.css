@@ -372,7 +372,8 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
   body.sheet-palette #left{transform:translateY(0)}
   body.sheet-right #right{transform:translateY(0)}
   body.sheet-palette #left .sheet-head,
-  body.sheet-right #right .sheet-head{display:flex}
+  body.sheet-right #right .sheet-head,
+  body.sheet-menu #menu-sheet .sheet-head{display:flex}
 
   .sheet-head{
     display:none;align-items:center;justify-content:space-between;gap:8px;
@@ -485,4 +486,31 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
 @media (max-width:390px){
   #mobile-bar button{font-size:9.5px}
   .brand-text{display:none}
+}
+
+/* ---- палитра цвета короба и размеры стены в панели инструментов ---- */
+.tool-colors{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;max-width:210px}
+.tool-colors .swatch{width:18px;height:18px;border-radius:5px;border:2px solid transparent;padding:0;cursor:pointer}
+.tool-colors .swatch.active{border-color:#fff;box-shadow:0 0 0 1px var(--accent)}
+.tool-colors .swatch:hover{border-color:#cbd5e1}
+.wall-size{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.wall-size input{
+  width:58px;background:#0c1526;border:1px solid var(--line);border-radius:6px;padding:4px 6px;
+  color:var(--text);font-size:11.5px;text-align:center;outline:none;
+}
+.wall-size input:focus{border-color:var(--accent)}
+.menu-size,.menu-colors{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);
+  background:#0c1526;border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+}
+.menu-size input{
+  width:64px;background:#0b1220;border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+  color:var(--text);font-size:16px;text-align:center;outline:none;
+}
+.menu-size input:focus{border-color:var(--accent)}
+.menu-colors .tool-colors{max-width:none}
+.menu-colors .tool-colors .swatch{width:24px;height:24px}
+@media (max-width:900px){
+  .wall-size{display:none}
+  #stage-toolbar .tool-colors{max-width:none}
 }

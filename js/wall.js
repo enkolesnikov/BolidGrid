@@ -621,13 +621,10 @@ export class WallEditor {
     x = clamp(x, 0, this.wall.width - model.w);
     y = clamp(y, 0, this.wall.height - model.h);
     const dev = this.store.addDevice(modelId, x, y);
-    this.store.tool = 'select';
-    this.store.armedModelId = null;
-    this.store.emit('tool');
-    this.store.emit('palette');
+    // режим размещения остаётся включённым: можно ставить приборы подряд, Esc — закончить
     this.store.emit('selection');
     this._hint();
-    if (dev) this.store.emit('toast', { text: `Добавлено: ${model.name} (${dev.tag})` });
+    if (dev) this.store.emit('toast', { text: `${model.name} — поставлен. Кликните ещё или Esc, чтобы закончить` });
     this.render();
   }
 
@@ -725,11 +722,10 @@ export class WallEditor {
       this.render();
       return;
     }
-    const ch = this.store.addChannel(draft.points, { kind: this.store.settings.channelKind || 'кабель-канал', wallId: draft.wallId });
+    this.store.addChannel(draft.points, { kind: this.store.settings.channelKind || 'кабель-канал', wallId: draft.wallId });
     this.store.tool = 'select';
     this.store.emit('tool');
     this._hint();
-    if (ch) this.store.emit('toast', { text: `Канал добавлен: ${m(this.store.channelLength(ch))}` });
     this.render();
   }
 
@@ -852,11 +848,14 @@ export class WallEditor {
       const label = d.tag || model.name;
       const yScreen = wallH - (d.y + model.h);
       const rot = d.rot || 0;
+      // минимальная зона попадания 60×60 мм — чтобы маленькие модули (МПН и т.п.) можно было выбрать мышью
+      const padX = Math.max(16, (60 - model.w) / 2);
+      const padY = Math.max(16, (60 - model.h) / 2);
       out += `<g class="dev${sel}" data-type="device" data-id="${d.id}" transform="translate(${d.x} ${yScreen})">
         <g transform="rotate(${rot} ${model.w / 2} ${model.h / 2})">
           <g class="dev-symbol">${symbolMarkup(model)}</g>
-          <rect class="dev-hit" x="${-16}" y="${-16}" width="${model.w + 32}" height="${model.h + 32}" rx="10"/>
-          <rect class="sel-frame" x="${-22}" y="${-22}" width="${model.w + 44}" height="${model.h + 44}" rx="12" vector-effect="non-scaling-stroke"/>
+          <rect class="dev-hit" x="${-padX}" y="${-padY}" width="${model.w + padX * 2}" height="${model.h + padY * 2}" rx="10"/>
+          <rect class="sel-frame" x="${-padX - 6}" y="${-padY - 6}" width="${model.w + padX * 2 + 12}" height="${model.h + padY * 2 + 12}" rx="12" vector-effect="non-scaling-stroke"/>
         </g>
         ${showTag ? `<text class="dev-tag" x="${model.w / 2}" y="${model.h + 90}">${esc(label)}</text>` : ''}
         ${showSub ? `<text class="dev-sub" x="${model.w / 2}" y="${model.h + 152}">${esc(d.address || model.model)}</text>` : ''}
@@ -956,13 +955,13 @@ export class WallEditor {
           : `Точек трассы: <b>${n}</b> · клик — следующая точка · <kbd>Enter</kbd> или двойной клик — завершить · <kbd>Esc</kbd> — отмена`;
       } else {
         text = coarse
-          ? 'Кабельный канал: тап — начало трассы. Точки выравниваются по горизонтали/вертикали.'
-          : 'Кабельный канал: кликните начало трассы. Точки выравниваются по горизонтали/вертикали.';
+          ? 'Короб: тап — начало трассы (точки выравниваются по горизонтали/вертикали).'
+          : 'Короб: кликните начало трассы. Точки выравниваются по горизонтали/вертикали. Цвет — в «Свойствах».';
       }
     } else if (tool === 'place' && this.store.armedModelId) {
       text = coarse
-        ? `Размещение: <b>${esc(modelName)}</b> — тапните по стене.`
-        : `Размещение: <b>${esc(modelName)}</b> — кликните на стене. <kbd>Esc</kbd> — отмена`;
+        ? `Размещение: <b>${esc(modelName)}</b> — тапните по стене, можно несколько <button class="hint-btn" id="btn-place-done">Готово</button>`
+        : `Размещение: <b>${esc(modelName)}</b> — кликните на стене (можно несколько). <kbd>Esc</kbd> — закончить`;
     } else if (tool === 'dimension') {
       text = coarse
         ? 'Размер: тап — первая точка, второй тап — вторая. Размер подпишется автоматически.'

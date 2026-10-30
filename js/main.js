@@ -5,7 +5,7 @@ import { Store } from './store.js';
 import { WallEditor } from './wall.js';
 import { Panels } from './panels.js';
 import { buildDemoProject } from './demo.js';
-import { getModel, CHANNEL_KINDS } from './catalog.js';
+import { getModel, CHANNEL_KINDS, CHANNEL_COLORS } from './catalog.js';
 import { download, esc } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -41,6 +41,14 @@ function updateStatus(s) {
 /* ================== уведомления / тосты ================== */
 store.on((type, detail) => {
   if (type === 'toast') panels.toast(detail?.text || '');
+  if (type === 'channel-added') {
+    const ch = store.getChannel(detail?.id);
+    if (ch) {
+      const len = store.channelLength(ch);
+      panels.toast(`Короб добавлен: ${(len / 1000).toFixed(2)} м. Цвет — в «Свойствах»`);
+      if (isMobile()) setTimeout(() => openSheet('props'), 120);
+    }
+  }
 });
 
 /* ================== реакция на состояние ================== */
@@ -54,12 +62,18 @@ store.on((type) => {
     updateHistoryButtons();
     renderMenuWalls();
   } else if (type === 'selection') {
+    const ch = store.selectedChannels()[0];
+    if (ch && ch.color) {
+      store.settings.channelColor = ch.color;
+      renderToolColors();
+    }
     editor.render();
     panels.renderFor('selection');
   } else if (type === 'wall') {
     editor.fit();
     panels.renderFor('wall');
     renderMenuWalls();
+    syncWallSizeUI();
   } else if (type === 'tool') {
     panels.updateToolButtons();
     editor._hint();
@@ -289,6 +303,66 @@ if (chKind) {
   });
 }
 
+/* цвет короба: для новых трасс и для выделенного короба */
+function renderToolColors() {
+  const active = store.settings.channelColor || CHANNEL_COLORS[0];
+  for (const id of ['tool-colors', 'tool-colors-mobile']) {
+    const box = $(id);
+    if (!box) continue;
+    box.innerHTML = CHANNEL_COLORS.map(
+      (c) => `<button class="swatch ${c.toLowerCase() === String(active).toLowerCase() ? 'active' : ''}" data-color="${c}" style="background:${c}" title="${c}" aria-label="Цвет ${c}"></button>`
+    ).join('');
+  }
+}
+function applyChannelColor(color) {
+  store.settings.channelColor = color;
+  const sel = store.selectedChannels();
+  if (sel.length) store.updateChannel(sel[0].id, { color });
+  store.scheduleSave();
+  renderToolColors();
+  editor.render();
+  panels.toast(`Цвет короба: ${color}`);
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest?.('#tool-colors [data-color], #tool-colors-mobile [data-color]');
+  if (b) applyChannelColor(b.dataset.color);
+});
+
+/* размеры активной стены: задаются прямо в панели инструментов (и в меню на телефоне) */
+function syncWallSizeUI() {
+  const w = store.wall;
+  if (!w) return;
+  const pairs = [
+    ['wall-w', w.width / 1000],
+    ['wall-h', w.height / 1000],
+    ['wall-w-mobile', w.width / 1000],
+    ['wall-h-mobile', w.height / 1000],
+  ];
+  for (const [id, v] of pairs) {
+    const el = $(id);
+    if (el && document.activeElement !== el) el.value = String(Math.round(v * 10) / 10);
+  }
+}
+function applyWallSize(lenM, heightM) {
+  const wall = store.wall;
+  if (!wall) return;
+  const patch = {};
+  if (lenM != null && Number.isFinite(lenM)) patch.width = Math.round(Math.min(60, Math.max(0.5, lenM)) * 1000);
+  if (heightM != null && Number.isFinite(heightM)) patch.height = Math.round(Math.min(20, Math.max(0.5, heightM)) * 1000);
+  if (!Object.keys(patch).length) return;
+  store.updateWall(wall.id, patch);
+  editor.fit();
+  syncWallSizeUI();
+  panels.toast(`Стена: ${(store.wall.width / 1000).toFixed(1)} × ${(store.wall.height / 1000).toFixed(1)} м`);
+}
+for (const id of ['wall-w', 'wall-h', 'wall-w-mobile', 'wall-h-mobile']) {
+  const el = $(id);
+  if (!el) continue;
+  el.addEventListener('change', () => {
+    applyWallSize(parseFloat($('wall-w')?.value ?? $('wall-w-mobile')?.value), parseFloat($('wall-h')?.value ?? $('wall-h-mobile')?.value));
+  });
+}
+
 /* подписи на листе: нет / кратко (обозначение) / полные (обозначение + адрес) */
 function syncLabelsUI() {
   const v = store.settings.labels || 'none';
@@ -351,7 +425,11 @@ for (const ev of ['pointerdown', 'keydown']) {
 document.addEventListener('click', (e) => {
   if (e.target.closest?.('#btn-channel-done')) {
     editor.finishChannel();
-    panels.toast('Кабельный канал добавлен');
+    panels.toast('Короб добавлен — цвет можно выбрать в «Свойствах»');
+  }
+  if (e.target.closest?.('#btn-place-done')) {
+    editor.cancelDraft();
+    panels.toast('Размещение завершено');
   }
 });
 
@@ -439,6 +517,8 @@ window.addEventListener('afterprint', () => {
   updateHistoryButtons();
   renderMenuWalls();
   syncLabelsUI();
+  syncWallSizeUI();
+  renderToolColors();
   editor._hint();
   requestAnimationFrame(() => {
     editor.fit();

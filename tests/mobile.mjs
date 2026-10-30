@@ -186,6 +186,11 @@ async function main() {
       await sleep(500);
       const afterPlace = await state();
       check(`${vp.label}: тап по стене добавляет устройство`, afterPlace.devices === before.devices + 1, `${before.devices} → ${afterPlace.devices}`);
+      check(`${vp.label}: режим размещения остаётся включённым`, afterPlace.tool === 'place', afterPlace.tool);
+      const placeDone = page.locator('#btn-place-done');
+      if (await placeDone.isVisible().catch(() => false)) await placeDone.tap();
+      await sleep(350);
+      check(`${vp.label}: кнопка «Готово» завершает размещение`, (await state()).tool === 'select', (await state()).tool);
 
       /* ---------- 3. выбор устройства пальцем и свойства ---------- */
       const devScreen = await page.evaluate(() => {
@@ -368,7 +373,7 @@ async function main() {
       check(`${vp.label}: меню действий открывается`, /sheet-menu/.test(menu.cls) && menu.sheetTop < vp.height, JSON.stringify(menu));
       check(`${vp.label}: в меню есть действия и список стен`, menu.actions >= 8 && menu.walls === 2, `actions=${menu.actions}, walls=${menu.walls}`);
       await page.screenshot({ path: `${OUT}mobile-${vp.width}-menu.png` });
-      await page.locator('#scrim').tap({ position: { x: 5, y: 150 } });
+      await page.locator('#menu-sheet [data-sheet-close]').tap();
       await sleep(300);
       check(`${vp.label}: затемнение закрывает меню`, (await state()).sheet === '');
 

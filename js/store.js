@@ -38,7 +38,7 @@ export class Store {
     this.selection = [];
     this.tool = 'select';
     this.armedModelId = null;
-    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none' };
+    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8' };
     this._undo = [];
     this._redo = [];
     this._before = null;
@@ -361,10 +361,13 @@ export class Store {
         width: width ?? def.width,
         points: points.map(([x, y]) => [Math.round(x), Math.round(y)]),
         cableModelId,
-        color,
+        color: color || this.settings.channelColor || '',
       };
       this.project.channels.push(ch);
+      this.selection = [{ type: 'channel', id: ch.id }];
     });
+    this.emit('selection');
+    this.emit('channel-added', { id: ch.id });
     return ch;
   }
   updateChannel(id, patch, { commit = true } = {}) {

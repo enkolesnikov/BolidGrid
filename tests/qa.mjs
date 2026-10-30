@@ -127,16 +127,34 @@ async function clickCanvas(page, fx, fy, opts = {}) {
 }
 
 async function armModel(page, modelId) {
-  await page.locator(`#palette-list .pal-item[data-model="${modelId}"]`).click();
+  const item = page.locator(`#palette-list .pal-item[data-model="${modelId}"]`);
+  await item.click();
   await sleep(80);
+  const st = await page.evaluate(() => ({ armed: window.BolidGrid.store.armedModelId, tool: window.BolidGrid.store.tool }));
+  if (st.armed !== modelId || st.tool !== 'place') {
+    // клик по уже выбранной модели выключает режим — возвращаем его
+    await item.click();
+    await sleep(80);
+  }
+}
+
+async function exitPlace(page) {
+  const tool = await page.evaluate(() => window.BolidGrid.store.tool);
+  if (tool === 'place') {
+    await page.keyboard.press('Escape');
+    await sleep(120);
+  }
 }
 
 async function placeModel(page, modelId, fx, fy) {
   await armModel(page, modelId);
   await clickCanvas(page, fx, fy);
+  await page.keyboard.press('Escape');
+  await sleep(100);
 }
 
 async function clickDevice(page, id, modifiers = []) {
+  await exitPlace(page);
   const loc = page.locator(`#devices .dev[data-id="${id}"] .dev-hit`);
   const cb = await canvasBox(page);
   const box = await loc.boundingBox().catch(() => null);
@@ -485,6 +503,7 @@ async function main() {
     check('B: обозначения новых устройств уникальны', placement.uniqueTags === placement.tagCount, `${placement.uniqueTags}/${placement.tagCount}`);
     check('B: SVG-узлы устройств = устройствам стены', placement.devNodes === placement.wallDevices, JSON.stringify(placement));
 
+    await page.keyboard.press('Escape');
     await blurAll(page);
     await pressKeys(page, Array(20).fill('Control+z'), 40);
     const su = await getState(page);
@@ -661,9 +680,9 @@ async function main() {
     // добавить стену
     await page.locator('#btn-add-wall').click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    await page.fill('#wall-name', 'QA-стена');
-    await page.fill('#wall-w', '3.5');
-    await page.fill('#wall-h', '2.2');
+    await page.fill('#dlg-wall-name', 'QA-стена');
+    await page.fill('#dlg-wall-w', '3.5');
+    await page.fill('#dlg-wall-h', '2.2');
     await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
     await sleep(450);
     const sAddWall = await getState(page);

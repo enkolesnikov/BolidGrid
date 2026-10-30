@@ -71,13 +71,30 @@ const terminals = (w, h, n, size = 14) => {
 /* ---------- символы ---------- */
 const SYMBOLS = {
   sirius: (w, h) => {
-    const p = 0.06 * w;
-    return R(0, 0, w, h, { rx: 8, fill: '#f8fafc' }) + R(p, p, w - 2 * p, h * 0.42, { rx: 4, fill: '#0f2b46', stroke: '#334155' }) +
-      L(p, h * 0.42 + p * 1.6, w - p, h * 0.42 + p * 1.6, { stroke: '#94a3b8', sw: 2 }) +
-      R(p * 1.4, h * 0.52, w * 0.44, h * 0.2, { rx: 3, fill: '#e2e8f0', stroke: '#94a3b8', sw: 2 }) +
-      C(w * 0.78, h * 0.62, w * 0.055, { fill: '#22c55e', stroke: '#166534', sw: 2 }) +
-      C(w * 0.78, h * 0.62, w * 0.055, { fill: 'none', stroke: '#166534', sw: 2 }) +
-      T(w / 2, h * 0.9, w * 0.11, 'СИРИУС', { weight: 700, fill: '#334155' });
+    // ППКУП «Сириус»: металлический шкаф с дверью, окном индикации, клавиатурой и замком
+    const s1 = Math.max(1, Math.min(w, h) * 0.018);
+    const frame = R(0, 0, w, h, { rx: Math.min(10, w * 0.02), fill: '#f1f5f9', stroke: '#334155', sw: s1 * 1.4 });
+    const door = R(w * 0.045, h * 0.035, w * 0.91, h * 0.93, { rx: Math.min(7, w * 0.014), fill: '#f8fafc', stroke: '#64748b', sw: s1 });
+    const windowR = R(w * 0.09, h * 0.08, w * 0.82, h * 0.34, { rx: Math.min(6, w * 0.012), fill: '#0b2237', stroke: '#334155', sw: s1 });
+    // строки на дисплее
+    const dispLines = [0.18, 0.27, 0.36].map((k, i) =>
+      L(w * 0.13, h * k + h * 0.03, w * 0.13 + w * (0.55 - i * 0.12), h * k + h * 0.03, { stroke: '#38bdf8', sw: s1 * 1.6 })
+    ).join('');
+    // клавиатура 4x4
+    let keys = '';
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 4; c++) {
+        const kw = w * 0.075, kh = h * 0.055;
+        keys += R(w * 0.09 + c * (kw + w * 0.02), h * 0.54 + r * (kh + h * 0.018), kw, kh, { rx: 2, fill: '#e2e8f0', stroke: '#94a3b8', sw: s1 * 0.8 });
+      }
+    }
+    const leds = [0, 1, 2].map((i) =>
+      C(w * 0.72, h * 0.58 + i * h * 0.09, Math.min(w, h) * 0.018, { fill: ['#22c55e', '#f59e0b', '#ef4444'][i], stroke: '#334155', sw: s1 * 0.8 })
+    ).join('');
+    const handle = R(w * 0.86, h * 0.47, w * 0.02, h * 0.12, { rx: 2, fill: '#94a3b8', stroke: '#475569', sw: s1 * 0.8 }) +
+      L(w * 0.87, h * 0.05, w * 0.87, h * 0.09, { stroke: '#64748b', sw: s1 });
+    const title = T(w / 2, h * 0.955, Math.min(w, h) * 0.055, 'СИРИУС', { weight: 700, fill: '#334155' });
+    return frame + door + windowR + dispLines + keys + leds + handle + title;
   },
   s2000m: (w, h) => R(0, 0, w, h, { rx: 8, fill: '#f8fafc' }) +
     R(w * 0.08, h * 0.06, w * 0.84, h * 0.32, { rx: 4, fill: '#0b3b2e', stroke: '#334155' }) +
@@ -100,9 +117,15 @@ const SYMBOLS = {
     R(w * 0.12, h * 0.18, w * 0.08, h * 0.46, { fill: '#a855f7', stroke: '#6b21a8', sw: 2 }) +
     P(`M${w * 0.82} ${h * 0.28} q${w * 0.1} ${h * 0.22} 0 ${h * 0.44}`, { stroke: '#a855f7', sw: 3 }) +
     P(`M${w * 0.9} ${h * 0.18} q${w * 0.12} ${h * 0.32} 0 ${h * 0.64}`, { stroke: '#a855f7', sw: 2.5 }),
-  block: (w, h, label, color, nTerm = 4) => R(0, 0, w, h, { rx: 5, fill: '#f0f9ff', stroke: color, sw: 3.5 }) +
-    R(w * 0.06, h * 0.08, w * 0.88, h * 0.42, { rx: 3, fill: '#fff', stroke: color, sw: 2 }) +
-    T(w / 2, h * 0.4, h * 0.22, label, { fill: '#0c4a6e', weight: 700 }) + terminals(w, h, nTerm),
+  block: (w, h, label, color, nTerm = 4) => {
+    const sw = Math.max(0.8, Math.min(3.2, Math.min(w, h) * 0.03));
+    const fs = Math.max(4, Math.min(h * 0.26, w * 0.2));
+    const termSize = Math.max(2, Math.min(14, w * 0.1));
+    return R(0, 0, w, h, { rx: Math.min(6, w * 0.05), fill: '#f0f9ff', stroke: color, sw }) +
+      R(w * 0.07, h * 0.08, w * 0.86, h * 0.52, { rx: Math.max(1, w * 0.03), fill: '#fff', stroke: color, sw: sw * 0.7 }) +
+      T(w / 2, h * 0.46, fs, label, { fill: '#0c4a6e', weight: 700 }) +
+      terminals(w, h, nTerm, termSize);
+  },
   korobka: (w, h) => R(w * 0.06, h * 0.06, w * 0.88, h * 0.88, { rx: 8, fill: '#f8fafc', stroke: '#475569', sw: 3.5 }) +
     C(w / 2, h / 2, w * 0.16, { fill: '#e2e8f0', stroke: '#475569', sw: 2 }) +
     L(w * 0.2, h * 0.2, w * 0.8, h * 0.8, { stroke: '#94a3b8', sw: 2, dash: '8 6' }),
@@ -162,7 +185,7 @@ const M = (o) => ({
 export const MODELS = [
   /* --- позиции спецификации 1–12 --- */
   M({
-    id: 'sirius', specPos: 1, kind: 'ppkup', symbol: 'sirius', w: 300, h: 355,
+    id: 'sirius', specPos: 1, kind: 'ppkup', symbol: 'sirius', w: 500, h: 425,
     name: 'ППКУП «Сириус»', model: 'ППКУП «Сириус»',
     full: 'Прибор приёмно-контрольный и управления пожарный «Сириус»',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -180,25 +203,25 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'sp2', specPos: 4, kind: 'blok_sp', symbol: 'block', tagText: 'СП2', terminals: 4, w: 156, h: 107,
+    id: 'sp2', specPos: 4, kind: 'blok_sp', symbol: 'block', tagText: 'СП2', terminals: 4, w: 102, h: 107,
     name: 'С2000-СП2', model: 'С2000-СП2',
     full: 'Блок сигнально-пусковой адресный С2000-СП2',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'sp4_220', specPos: 5, kind: 'blok_kpb', symbol: 'block', tagText: 'СП4/220', terminals: 4, w: 220, h: 180,
+    id: 'sp4_220', specPos: 5, kind: 'blok_kpb', symbol: 'block', tagText: 'СП4/220', terminals: 4, w: 156, h: 107,
     name: 'С2000-СП4/220 исп.01', model: 'С2000-СП4/220 исп.01',
     full: 'Блок контрольно-пусковой адресный С2000-СП4/220 исп.01',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'ar2', specPos: 6, kind: 'rasshiritel', symbol: 'block', tagText: 'АР2', terminals: 2, w: 156, h: 107,
+    id: 'ar2', specPos: 6, kind: 'rasshiritel', symbol: 'block', tagText: 'АР2', terminals: 2, w: 102, h: 107,
     name: 'С2000-АР2 исп.02', model: 'С2000-АР2 исп.02',
     full: 'Адресный расширитель С2000-АР2 исп.02',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'mpn', specPos: 7, kind: 'modul', symbol: 'block', tagText: 'МПН', terminals: 2, w: 100, h: 70,
+    id: 'mpn', specPos: 7, kind: 'modul', symbol: 'block', tagText: 'МПН', terminals: 2, w: 23, h: 9,
     name: 'МПН', model: 'МПН',
     full: 'Модуль подключения нагрузки МПН',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -242,7 +265,7 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'sp1', kind: 'blok_sp', symbol: 'block', tagText: 'СП1', terminals: 2, w: 156, h: 107,
+    id: 'sp1', kind: 'blok_sp', symbol: 'block', tagText: 'СП1', terminals: 2, w: 102, h: 107,
     name: 'С2000-СП1 исп.02', model: 'С2000-СП1 исп.02',
     full: 'Блок сигнально-пусковой адресный С2000-СП1 исп.02',
     vendor: 'ЗАО НВП «БОЛИД»',
@@ -254,13 +277,13 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'rip12', kind: 'bp', symbol: 'rip', w: 255, h: 190,
+    id: 'rip12', kind: 'bp', symbol: 'rip', w: 255, h: 310,
     name: 'РИП-12 исп.50', model: 'РИП-12 исп.50',
     full: 'Резервированный источник питания РИП-12 исп.50',
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
-    id: 'bp12', kind: 'bp', symbol: 'rip', w: 250, h: 190,
+    id: 'bp12', kind: 'bp', symbol: 'rip', w: 250, h: 310,
     name: 'Блок питания 12 В / 5 А', model: 'БП 12/5',
     full: 'Блок питания резервированный 12 В, 5 А',
     vendor: '—',

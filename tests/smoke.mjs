@@ -89,7 +89,24 @@ async function main() {
     await sleep(200);
     const afterPlace = await state();
     check('клик по стене добавляет устройство', afterPlace.devices === s0.devices + 1, `${s0.devices} → ${afterPlace.devices}`);
-    check('после размещения включается инструмент «выбор»', afterPlace.tool === 'select', afterPlace.tool);
+    check('режим размещения остаётся включённым (можно ставить подряд)', afterPlace.tool === 'place', afterPlace.tool);
+    await page.mouse.click(wallBox.x + wallBox.width * 0.52, wallBox.y + wallBox.height * 0.5);
+    await sleep(200);
+    check('второй клик ставит ещё один прибор без повторного выбора модели', (await state()).devices === s0.devices + 2, `devices=${(await state()).devices}`);
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    check('Esc завершает режим размещения', (await state()).tool === 'select', (await state()).tool);
+
+    // --- размеры стены задаются в панели инструментов ---
+    await page.fill('#wall-w', '5.2');
+    await page.locator('#wall-w').press('Enter');
+    await sleep(300);
+    const wallSize = await page.evaluate(() => ({ w: window.BolidGrid.store.wall.width, h: window.BolidGrid.store.wall.height }));
+    check('ширина стены меняется через поле «Стена»', wallSize.w === 5200, JSON.stringify(wallSize));
+    await page.fill('#wall-w', '4.2');
+    await page.locator('#wall-w').press('Enter');
+    await sleep(300);
+    await page.evaluate(() => document.activeElement?.blur());
 
     // --- кабельный канал ---
     await page.keyboard.press('c');
