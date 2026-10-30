@@ -652,12 +652,13 @@ export class Panels {
     const cableRows = [];
     for (const row of spec?.cables || []) {
       const key = norm(row.model || row.name);
-      const fact = cableIf.get(key)?.length || 0;
+      // длина в журнале считается в мм, количество в спецификации — в метрах
+      const fact = (cableIf.get(key)?.length || 0) / 1000;
       cableRows.push({ pos: row.pos, name: row.name, model: row.model, vendor: row.vendor, unit: row.unit || 'м', plan: +row.qty || 0, fact, section: row.group || 'Кабельная продукция' });
     }
     if (!cableRows.length) {
       for (const r of journal.totalsByCable) {
-        cableRows.push({ pos: cableRows.length + 1, name: `Кабель по кабельному журналу`, model: r.cable, vendor: '—', unit: 'м', plan: null, fact: r.length, section: 'Кабельная продукция (расчёт)' });
+        cableRows.push({ pos: cableRows.length + 1, name: `Кабель по кабельному журналу`, model: r.cable, vendor: '—', unit: 'м', plan: null, fact: r.length / 1000, section: 'Кабельная продукция (расчёт)' });
       }
     }
 
@@ -674,14 +675,14 @@ export class Panels {
         .map((r) => {
           const diff = r.plan != null && r.fact != null ? r.fact - r.plan : null;
           const cls = diff == null ? '' : diff === 0 ? 'ok' : diff < 0 ? 'warn' : 'bad';
-          const pill = diff == null ? '' : `<span class="pill ${cls}">${diff > 0 ? '+' : ''}${diff}</span>`;
+          const pill = diff == null ? '' : `<span class="pill ${cls}">${diff > 0 ? '+' : ''}${fmt(diff)}</span>`;
           return `<tr>
             <td class="num">${r.pos ?? ''}</td>
             <td>${escAll(r.name)}</td>
             <td>${escAll(r.model || '')}</td>
             <td>${escAll(r.vendor || '')}</td>
             <td>${escAll(r.unit)}</td>
-            ${showPlan ? `<td class="num">${r.plan ?? '—'}</td>` : ''}
+            ${showPlan ? `<td class="num">${r.plan == null ? '—' : fmt(r.plan)}</td>` : ''}
             ${showFact ? `<td class="num">${r.fact == null ? '—' : fmt(r.fact)}</td>` : ''}
             ${showFact && showPlan ? `<td class="num">${pill}</td>` : ''}
           </tr>`;

@@ -146,6 +146,20 @@ async function main() {
     check('в спецификации есть позиция «Сириус» и «ДИП-34А-04»', /Сириус/.test(specText) && /ДИП-34А-04/.test(specText));
     check('в спецификации есть сопоставление факта и количества', /по\s*спец\./i.test(specText) && /факт/i.test(specText));
     check('в спецификации посчитана длина кабеля по журналу', /КПСнг/.test(specText), '');
+    const cable = await page.evaluate(() => {
+      const table = [...document.querySelectorAll('#tab-spec table')].find((t) => /КПСнг/.test(t.textContent));
+      if (!table) return null;
+      const row = [...table.querySelectorAll('tbody tr')].find((tr) => /КПСнг/.test(tr.textContent));
+      if (!row) return null;
+      const cells = [...row.querySelectorAll('td')].map((td) => td.textContent.trim());
+      const parse = (s) => parseFloat(String(s).replace(/[\s\u00a0]/g, '').replace(',', '.'));
+      return { cells, plan: parse(cells[5]), fact: parse(cells[6]), diff: parse(cells[7]) };
+    });
+    check(
+      'кабель: «Факт» в метрах и сопоставим с проектом (не мм)',
+      !!cable && cable.fact > 0 && cable.fact < 1000 && Math.abs(cable.diff - (cable.fact - cable.plan)) < 0.05,
+      JSON.stringify(cable)
+    );
 
     // --- кабельный журнал ---
     await page.locator('#tabs button[data-tab="journal"]').click();
@@ -183,6 +197,23 @@ async function main() {
       return !doc.querySelector('parsererror') && doc.documentElement.tagName === 'svg' && doc.querySelectorAll('.dev').length > 0;
     });
     check('экспортированный SVG — корректный XML с устройствами', svgValid);
+    const svgRoot = await page.evaluate(async () => {
+      const s = await window.BolidGrid.editor.exportSVGFile();
+      const doc = new DOMParser().parseFromString(s, 'image/svg+xml');
+      const root = doc.documentElement;
+      return {
+        viewBox: root.getAttribute('viewBox'),
+        width: root.getAttribute('width'),
+        height: root.getAttribute('height'),
+        devs: doc.querySelectorAll('.dev').length,
+        hasSheet: !!doc.querySelector('.sheet'),
+      };
+    });
+    check(
+      'экспортированный SVG имеет viewBox, размеры и лист стены',
+      !!svgRoot.viewBox && !!svgRoot.width && !!svgRoot.height && svgRoot.devs > 0 && svgRoot.hasSheet,
+      JSON.stringify(svgRoot)
+    );
     const json = await page.evaluate(() => window.BolidGrid.store.serialize().length);
     check('экспорт JSON проекта', json > 1000, `chars=${json}`);
     const saved = await page.evaluate(() => !!localStorage.getItem('bolidgrid:project:v1'));
@@ -199,6 +230,40 @@ async function main() {
     await mkdir(new URL('output/', import.meta.url).pathname, { recursive: true }).catch(() => {});
     await page.screenshot({ path: new URL('output/smoke.png', import.meta.url).pathname, fullPage: false });
     await writeFile(new URL('output/smoke-result.txt', import.meta.url).pathname, results.join('\n') + '\n');
+
+    // --- устойчивость импорта: ограничение координат и согласование состава ---
+    const imported = await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      st.replaceProject({
+        walls: [{ id: 'w1', name: 'W', width: 6000, height: 2700 }],
+        devices: [
+          { id: 'd1', modelId: 'dip34a', wallId: 'w1', x: 99999, y: -50 },
+          { id: 'd2', modelId: 'dip34a', wallId: 'w1', x: 100, y: 100 },
+        ],
+        channels: [{ id: 'c1', wallId: 'w1', kind: 'кабель-канал', width: 40, points: [[0, 0], [100, 0]] }],
+        groups: [{ id: 'g1', name: 'G', kind: 'ШС', color: '#fff', deviceIds: ['d1', 'd2'] }],
+      });
+      const d = st.project.devices[0];
+      const g = st.project.groups[0];
+      return { x: d.x, y: d.y, groupIds: d.groupIds, groupDeviceIds: g.deviceIds };
+    });
+    check('импорт: координаты устройств ограничены стеной', imported.x <= 5900 && imported.y >= 0, JSON.stringify(imported));
+    check('импорт: членство устройств и объединений согласовано', imported.groupIds.includes('g1'), JSON.stringify(imported));
+
+    const tagState = await page.evaluate(() => {
+      const st = window.BolidGrid.store;
+      st.replaceProject({
+        walls: [{ id: 'a', name: 'A', width: 6000, height: 2700 }, { id: 'b', name: 'B', width: 6000, height: 2700 }],
+        devices: [{ id: 'd1', modelId: 'dip34a', wallId: 'b', x: 100, y: 100, tag: '2.1' }],
+        channels: [],
+        groups: [],
+      });
+      st.activeWallId = 'b';
+      st.removeWall('a');
+      st.activeWallId = st.project.walls[0].id;
+      return { walls: st.project.walls.length, tag: st.nextTag(st.project.walls[0].id) };
+    });
+    check('после удаления первой стены нумерация продолжается (2.2)', tagState.tag === '2.2', JSON.stringify(tagState));
 
     check('нет ошибок JavaScript на странице', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
     check('нет ошибок в консоли', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));

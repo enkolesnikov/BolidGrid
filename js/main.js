@@ -135,6 +135,17 @@ const actions = {
     const n = store.removeSelection();
     if (n) panels.toast(`Удалено: ${n}`);
   },
+  'export-svg': async () => {
+    try {
+      const svg = await editor.exportSVGFile();
+      const base = (store.project.meta.name || 'bolidgrid').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
+      const wall = (editor.wall?.name || 'стена').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
+      download(`${base}_${wall}.svg`, svg, 'image/svg+xml');
+      panels.toast('Лист стены выгружен в SVG');
+    } catch (err) {
+      panels.toast(`Не удалось выгрузить SVG: ${err.message}`, true);
+    }
+  },
   import: () => $('file-input')?.click(),
   export: doExport,
   print: () => window.print(),

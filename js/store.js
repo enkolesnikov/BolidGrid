@@ -261,13 +261,20 @@ export class Store {
   }
   nextTag(wallId = this.activeWallId) {
     const wallNo = Math.max(1, this.project.walls.findIndex((w) => w.id === wallId) + 1);
-    const tags = this.project.devices
-      .filter((d) => d.wallId === wallId)
-      .map((d) => {
-        const mm = /^(\d+)\.(\d+)/.exec(d.tag || '');
-        return mm && +mm[1] === wallNo ? +mm[2] : 0;
-      });
-    return `${wallNo}.${(tags.length ? Math.max(...tags) : 0) + 1}`;
+    // если на стене уже есть обозначения — продолжаем их нумерацию, а не нумерацию по индексу
+    const byPrefix = new Map();
+    for (const d of this.project.devices.filter((d) => d.wallId === wallId)) {
+      const mm = /^(\d+)\.(\d+)/.exec(d.tag || '');
+      if (!mm) continue;
+      const prefix = +mm[1];
+      if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
+      byPrefix.get(prefix).push(+mm[2]);
+    }
+    if (byPrefix.size) {
+      const [prefix, nums] = [...byPrefix.entries()].sort((a, b) => b[1].length - a[1].length || a[0] - b[0])[0];
+      return `${prefix}.${Math.max(...nums) + 1}`;
+    }
+    return `${wallNo}.1`;
   }
   /** Добавить устройство; координаты — левый нижний угол габарита, мм от пола. */
   addDevice(modelId, x, y, patch = {}) {
@@ -577,16 +584,18 @@ export function sanitizeProject(raw) {
       }))
     : base.walls;
   const wallIds = new Set(walls.map((w) => w.id));
+  const wallById = new Map(walls.map((w) => [w.id, w]));
   const devices = (Array.isArray(raw.devices) ? raw.devices : [])
     .filter((d) => d && wallIds.has(d.wallId))
     .map((d) => {
       const model = getModel(d.modelId);
+      const wall = wallById.get(d.wallId);
       return {
         id: String(d.id || uid('dev')),
         modelId: model.id,
         wallId: d.wallId,
-        x: +d.x || 0,
-        y: +d.y || 0,
+        x: clamp(Math.round(+d.x || 0), 0, Math.max(0, wall.width - model.w)),
+        y: clamp(Math.round(+d.y || 0), 0, Math.max(0, wall.height - model.h)),
         rot: [0, 90, 180, 270].includes(+d.rot) ? +d.rot : 0,
         tag: String(d.tag ?? ''),
         address: String(d.address ?? ''),
@@ -600,7 +609,7 @@ export function sanitizeProject(raw) {
     .map((c) => ({
       id: String(c.id || uid('ch')),
       wallId: c.wallId,
-      kind: String(c.kind || 'кабель-канал'),
+      kind: ['кабель-канал', 'лоток', 'гофра', 'труба'].includes(c.kind) ? c.kind : 'кабель-канал',
       width: clamp(+c.width || 40, 5, 600),
       points: c.points.map((p) => [ +p[0] || 0, +p[1] || 0 ]),
       cableModelId: String(c.cableModelId ?? ''),
@@ -611,12 +620,14 @@ export function sanitizeProject(raw) {
     .map((g, i) => ({
       id: String(g.id || uid('grp')),
       name: String(g.name || `Шлейф ${i + 1}`),
-      kind: String(g.kind || 'ШС'),
-      color: String(g.color || GROUP_COLORS[i % GROUP_COLORS.length]),
+      kind: ['ШС', 'СОУЭ', 'Питание', 'Адрес', 'Прочее'].includes(g.kind) ? g.kind : 'ШС',
+      color: /^#[0-9a-fA-F]{3,8}$/.test(String(g.color || '')) ? String(g.color) : GROUP_COLORS[i % GROUP_COLORS.length],
       note: String(g.note ?? ''),
       deviceIds: g.deviceIds.map(String).filter((id) => devices.some((d) => d.id === id)),
     }));
-  for (const d of devices) d.groupIds = d.groupIds.filter((id) => groups.some((g) => g.id === id));
+  // согласовать состав объединений и членство устройств (источник истины — group.deviceIds)
+  for (const g of groups) g.deviceIds = g.deviceIds.filter((id) => devices.some((d) => d.id === id));
+  for (const d of devices) d.groupIds = groups.filter((g) => g.deviceIds.includes(d.id)).map((g) => g.id);
   return {
     version: SCHEMA_VERSION,
     meta: { ...base.meta, ...(raw.meta && typeof raw.meta === 'object' ? raw.meta : {}) },

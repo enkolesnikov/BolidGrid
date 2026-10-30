@@ -811,7 +811,6 @@ export class WallEditor {
     const walker = this.svg.cloneNode(true);
     walker.setAttribute('id', 'wall');
     walker.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.w} ${bbox.h}`);
-    walker.setAttribute('width', '100%');
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
@@ -825,14 +824,21 @@ export class WallEditor {
   }
 
   async exportSVGFile() {
-    const { svg } = this.buildExportSVG();
+    const { svg, bbox } = this.buildExportSVG();
     let css = '';
     try {
       css = await (await fetch('css/app.css')).text();
     } catch {
       css = '';
     }
-    const doc = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\n<style>${css}</style>\n${svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}\n</svg>`;
-    return doc;
+    const inner = svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+    const width = Math.round(bbox.w / 4);
+    const height = Math.round(bbox.h / 4);
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="wall" width="${width}" height="${height}" viewBox="${bbox.x} ${bbox.y} ${bbox.w} ${bbox.h}">
+<style><![CDATA[${css}]]></style>
+${inner}
+</svg>
+`;
   }
 }
