@@ -514,3 +514,8 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
   .wall-size{display:none}
   #stage-toolbar .tool-colors{max-width:none}
 }
+
+/* зоны захвата сегментов короба: тянуть участок или (Shift/удержание) весь короб */
+.channel-seg-hit{stroke:transparent;pointer-events:stroke;cursor:grab}
+.channel-seg-hit:hover{stroke:rgba(56,189,248,.14)}
+.channel-seg-hit:active{cursor:grabbing}

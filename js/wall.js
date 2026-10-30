@@ -213,6 +213,25 @@ export class WallEditor {
       this.render();
     }, 480);
   }
+  _startChannelLongPress(e, channelId) {
+    this._clearLongPress();
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      if (!this.drag || this.drag.mode === 'channel-move') return;
+      this.drag.mode = 'channel-move';
+      this.drag.points0 = (this.store.getChannel(channelId)?.points || []).map((p) => [...p]);
+      this.drag.start = this.drag.start || [0, 0];
+      this.drag.moved = false;
+      try {
+        navigator.vibrate?.(15);
+      } catch {
+        /* необязательно */
+      }
+      this.store.emit('toast', { text: 'Двигаем весь короб — тяните лист' });
+      this.render();
+    }, 480);
+  }
+
   _clearLongPress() {
     if (this.longPressTimer) {
       clearTimeout(this.longPressTimer);
@@ -410,6 +429,26 @@ export class WallEditor {
         this.render();
         return;
       }
+      if (info.type === 'channel-seg') {
+        const ch = this.store.getChannel(info.id);
+        if (!ch) return;
+        if (!this.store.isSelected('channel', ch.id)) this.store.select([{ type: 'channel', id: ch.id }]);
+        this.store.begin();
+        this.drag = {
+          mode: 'channel-seg',
+          channelId: ch.id,
+          index: +info.index,
+          start: floor,
+          points0: ch.points.map((p) => [...p]),
+          whole: e.shiftKey || e.ctrlKey || e.metaKey,
+          moved: false,
+        };
+        if (this.drag.whole) this.drag.mode = 'channel-move';
+        if (e.pointerType !== 'mouse') this._startChannelLongPress(e, ch.id);
+        this._capture(e);
+        this.render();
+        return;
+      }
 
       // устройство
       const already = this.store.isSelected('device', info.id);
@@ -510,6 +549,51 @@ export class WallEditor {
       }
       return;
     }
+    if (this.drag?.mode === 'channel-seg' || this.drag?.mode === 'channel-move') {
+      const d = this.drag;
+      const ch = this.store.getChannel(d.channelId);
+      if (!ch) return;
+      const dxPx = floor[0] - d.start[0];
+      const dyPx = floor[1] - d.start[1];
+      if (!d.moved && Math.hypot(dxPx, dyPx) > 4) d.moved = true;
+      if (!d.moved) return;
+      const W = this.wall.width;
+      const H = this.wall.height;
+      const grid = this.grid;
+      if (d.mode === 'channel-move') {
+        const xs = d.points0.map((p) => p[0]);
+        const ys = d.points0.map((p) => p[1]);
+        let dx = this.snapOn() ? Math.round(dxPx / grid) * grid : dxPx;
+        let dy = this.snapOn() ? Math.round(dyPx / grid) * grid : dyPx;
+        dx = clamp(dx, -Math.min(...xs), W - Math.max(...xs));
+        dy = clamp(dy, -Math.min(...ys), H - Math.max(...ys));
+        ch.points = d.points0.map(([x, y]) => [x + dx, y + dy]);
+      } else {
+        const pts0 = d.points0;
+        const p1 = pts0[d.index];
+        const p2 = pts0[d.index + 1];
+        const horizontal = p1[1] === p2[1];
+        let runStart = d.index;
+        let runEnd = d.index + 1;
+        if (horizontal) {
+          while (runStart > 0 && pts0[runStart - 1][1] === pts0[runStart][1]) runStart--;
+          while (runEnd < pts0.length - 1 && pts0[runEnd][1] === pts0[runEnd + 1][1]) runEnd++;
+          let dy = this.snapOn() ? Math.round(dyPx / grid) * grid : dyPx;
+          const baseY = pts0[runStart][1];
+          dy = clamp(dy, -baseY, H - baseY);
+          ch.points = pts0.map((p, i) => (i >= runStart && i <= runEnd ? [p[0], p[1] + dy] : [...p]));
+        } else {
+          while (runStart > 0 && pts0[runStart - 1][0] === pts0[runStart][0]) runStart--;
+          while (runEnd < pts0.length - 1 && pts0[runEnd][0] === pts0[runEnd + 1][0]) runEnd++;
+          let dx = this.snapOn() ? Math.round(dxPx / grid) * grid : dxPx;
+          const baseX = pts0[runStart][0];
+          dx = clamp(dx, -baseX, W - baseX);
+          ch.points = pts0.map((p, i) => (i >= runStart && i <= runEnd ? [p[0] + dx, p[1]] : [...p]));
+        }
+      }
+      this.store.emit('live');
+      return;
+    }
     if (this.drag?.mode === 'dim') {
       const dim = this.store.getDimension(this.drag.dimId);
       if (dim) {
@@ -588,6 +672,15 @@ export class WallEditor {
     if (this.drag?.mode === 'dim') {
       this.drag = null;
       this.store.commit('изменение размера');
+      this.render();
+      return;
+    }
+    if (this.drag?.mode === 'channel-seg' || this.drag?.mode === 'channel-move') {
+      const d = this.drag;
+      this.drag = null;
+      this._clearLongPress();
+      if (d.moved) this.store.commit('перемещение короба');
+      else this.store._before = null;
       this.render();
       return;
     }
@@ -814,6 +907,10 @@ export class WallEditor {
         <path class="channel-hit" d="${d}" stroke-width="${Math.max(sw * 2.6, 140)}"/>
         <path class="channel-body" d="${d}" stroke-width="${sw}" stroke="${color}"/>
         <path class="channel-inner" d="${d}" stroke-width="${Math.max(sw * 0.26, 2)}"/>
+        ${ch.points.slice(1).map((pt, i) => {
+          const a = ch.points[i];
+          return `<line class="channel-seg-hit" data-type="channel-seg" data-id="${ch.id}" data-index="${i}" x1="${a[0]}" y1="${this.toScreenY(a[1])}" x2="${pt[0]}" y2="${this.toScreenY(pt[1])}" stroke-width="${Math.max(sw + 90, 220)}"/>`;
+        }).join('')}
       </g>`;
 
     }
@@ -1000,6 +1097,10 @@ export class WallEditor {
         : 'Размер: клик — первая точка, второй клик — вторая (по горизонтали/вертикали). <kbd>Esc</kbd> — выход.';
     } else if (tool === 'pan') {
       text = coarse ? 'Панорама: тяните лист одним пальцем, масштаб — двумя.' : 'Панорама: тяните мышью. Колесо — масштаб.';
+    } else if (this.store.selectedChannels().length) {
+      text = coarse
+        ? 'Тяните короб — сдвиг участка · удержание и перетаскивание — весь короб · вершины — изменить трассу.'
+        : 'Тяните линию короба — сдвиг участка · Shift+тяните — весь короб · вершины — изменить трассу.';
     } else if (coarse) {
       text = 'Тап — выбрать · удержание — добавить в выделение · два пальца — масштаб.';
     } else {

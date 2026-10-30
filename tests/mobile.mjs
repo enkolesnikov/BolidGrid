@@ -359,6 +359,62 @@ async function main() {
       const chAfter = await state();
       check(`${vp.label}: кнопка «Готово» завершает трассу`, chAfter.channels === chBefore + 1, `${chBefore} → ${chAfter.channels}`);
 
+      /* ---------- 6b. короб двигается: участок и весь короб (удержание) ---------- */
+      // закрыть авто-открытые свойства
+      const propsClose = page.locator('#right [data-sheet-close]');
+      if (await propsClose.isVisible().catch(() => false)) await propsClose.tap();
+      await sleep(300);
+      const segScreen = await page.evaluate(() => {
+        const ed = window.BolidGrid.editor;
+        const s = window.BolidGrid.store;
+        const ch = s.project.channels[s.project.channels.length - 1];
+        const pt = ed.svg.createSVGPoint();
+        pt.x = (ch.points[0][0] + ch.points[1][0]) / 2;
+        pt.y = ed.wall.height - (ch.points[0][1] + ch.points[1][1]) / 2;
+        const sp = pt.matrixTransform(ed.svg.getScreenCTM());
+        return { x: sp.x, y: sp.y, pts: ch.points.map((p) => [...p]) };
+      });
+      // обычное перетаскивание участка
+      await swipe(segScreen.x, segScreen.y, segScreen.x + 20, segScreen.y + 40, 10);
+      await sleep(400);
+      const segRes = await page.evaluate(() => {
+        const s = window.BolidGrid.store;
+        const ch = s.project.channels[s.project.channels.length - 1];
+        return { pts: ch.points, straight: ch.points.slice(1).every((p, i) => p[0] === ch.points[i][0] || p[1] === ch.points[i][1]) };
+      });
+      check(`${vp.label}: перетаскивание участка короба пальцем`, segRes.straight && segRes.pts[0][1] !== segScreen.pts[0][1], JSON.stringify({ before: segScreen.pts[0], after: segRes.pts[0] }));
+
+      // удержание + перетаскивание = весь короб
+      const wholeStart = await page.evaluate(() => {
+        const ed = window.BolidGrid.editor;
+        const s = window.BolidGrid.store;
+        const ch = s.project.channels[s.project.channels.length - 1];
+        const pt = ed.svg.createSVGPoint();
+        pt.x = (ch.points[0][0] + ch.points[1][0]) / 2;
+        pt.y = ed.wall.height - (ch.points[0][1] + ch.points[1][1]) / 2;
+        const sp = pt.matrixTransform(ed.svg.getScreenCTM());
+        return { x: sp.x, y: sp.y, pts: ch.points.map((p) => [...p]) };
+      });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: wholeStart.x, y: wholeStart.y, id: 1 }] });
+      await sleep(750);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: wholeStart.x - 30, y: wholeStart.y - 40, id: 1 }] });
+      await sleep(120);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await sleep(450);
+      const wholeRes = await page.evaluate(() => {
+        const s = window.BolidGrid.store;
+        const ch = s.project.channels[s.project.channels.length - 1];
+        const straight = ch.points.slice(1).every((p, i) => p[0] === ch.points[i][0] || p[1] === ch.points[i][1]);
+        return { pts: ch.points, straight };
+      });
+      const wdx = wholeRes.pts.map((p, i) => p[0] - wholeStart.pts[i][0]);
+      const wdy = wholeRes.pts.map((p, i) => p[1] - wholeStart.pts[i][1]);
+      check(
+        `${vp.label}: удержание + перетаскивание двигает весь короб`,
+        wholeRes.straight && new Set(wdx).size === 1 && new Set(wdy).size === 1 && (wdx[0] !== 0 || wdy[0] !== 0),
+        JSON.stringify({ wdx, wdy })
+      );
+
       /* ---------- 7. меню действий ---------- */
       await page.locator('#mobile-bar button[data-sheet="journal"]').tap();
       await sleep(300);

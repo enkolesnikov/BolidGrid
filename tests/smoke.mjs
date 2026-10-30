@@ -165,6 +165,64 @@ async function main() {
     });
     check('короб остаётся прямым: после перетаскивания вершины все сегменты H/V', ortho.straight, JSON.stringify(ortho));
 
+    // --- перетаскивание участка короба и всего короба ---
+    const segMid = await page.evaluate(() => {
+      const ed = window.BolidGrid.editor;
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      const pt = ed.svg.createSVGPoint();
+      pt.x = (ch.points[0][0] + ch.points[1][0]) / 2;
+      pt.y = ed.wall.height - (ch.points[0][1] + ch.points[1][1]) / 2;
+      const sp = pt.matrixTransform(ed.svg.getScreenCTM());
+      return { x: sp.x, y: sp.y, pts: ch.points.map((p) => [...p]) };
+    });
+    const dragPts = async (x1, y1, x2, y2, shift = false) => {
+      if (shift) await page.keyboard.down('Shift');
+      await page.mouse.move(x1, y1);
+      await page.mouse.down();
+      await page.mouse.move(x2, y2, { steps: 8 });
+      await page.mouse.up();
+      if (shift) await page.keyboard.up('Shift');
+      await sleep(300);
+    };
+    await dragPts(segMid.x, segMid.y, segMid.x + 20, segMid.y + 45);
+    const segMoved = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      return { pts: ch.points, straight: ch.points.slice(1).every((p, i) => p[0] === ch.points[i][0] || p[1] === ch.points[i][1]) };
+    });
+    check(
+      'линию короба можно тянуть: сдвиг участка сохраняет прямоту',
+      segMoved.straight && (segMoved.pts[0][1] !== segMid.pts[0][1] || segMoved.pts[0][0] !== segMid.pts[0][0]),
+      JSON.stringify({ before: segMid.pts, after: segMoved.pts })
+    );
+    await page.keyboard.press('Escape');
+    // Shift+протяжка — весь короб
+    const wholeStart = await page.evaluate(() => {
+      const ed = window.BolidGrid.editor;
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      const pt = ed.svg.createSVGPoint();
+      pt.x = (ch.points[0][0] + ch.points[1][0]) / 2;
+      pt.y = ed.wall.height - (ch.points[0][1] + ch.points[1][1]) / 2;
+      const sp = pt.matrixTransform(ed.svg.getScreenCTM());
+      return { x: sp.x, y: sp.y, pts: ch.points.map((p) => [...p]) };
+    });
+    await dragPts(wholeStart.x, wholeStart.y, wholeStart.x + 50, wholeStart.y - 30, true);
+    const wholeMoved = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ch = s.project.channels[s.project.channels.length - 1];
+      const straight = ch.points.slice(1).every((p, i) => p[0] === ch.points[i][0] || p[1] === ch.points[i][1]);
+      return { pts: ch.points, straight };
+    });
+    const dxs = wholeMoved.pts.map((p, i) => p[0] - wholeStart.pts[i][0]);
+    const dys = wholeMoved.pts.map((p, i) => p[1] - wholeStart.pts[i][1]);
+    check(
+      'Shift+протяжка двигает весь короб целиком',
+      wholeMoved.straight && new Set(dxs).size === 1 && new Set(dys).size === 1 && (dxs[0] !== 0 || dys[0] !== 0),
+      JSON.stringify({ dxs, dys })
+    );
+
     const swatchCount = await page.locator('#tab-props [data-ch-color]').count();
     check('в свойствах короба есть палитра цветов', swatchCount >= 6, `swatches=${swatchCount}`);
     await page.locator('#tab-props [data-ch-color]').nth(2).click();
