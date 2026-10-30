@@ -6,7 +6,7 @@ import { WallEditor } from './wall.js';
 import { Panels } from './panels.js';
 import { buildDemoProject } from './demo.js';
 import { getModel, CHANNEL_KINDS } from './catalog.js';
-import { download } from './util.js';
+import { download, esc } from './util.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -52,12 +52,14 @@ store.on((type) => {
     editor.render();
     panels.renderFor(type);
     updateHistoryButtons();
+    renderMenuWalls();
   } else if (type === 'selection') {
     editor.render();
     panels.renderFor('selection');
   } else if (type === 'wall') {
     editor.fit();
     panels.renderFor('wall');
+    renderMenuWalls();
   } else if (type === 'tool') {
     panels.updateToolButtons();
     editor._hint();
@@ -172,6 +174,97 @@ for (const btn of document.querySelectorAll('[data-action]')) {
   });
 }
 
+/* ================== мобильные шторки ================== */
+const MOBILE_MQ = window.matchMedia('(max-width: 900px)');
+const isMobile = () => MOBILE_MQ.matches;
+const bodyEl = document.body;
+const scrim = $('scrim');
+const menuSheet = $('menu-sheet');
+const barButtons = [...document.querySelectorAll('#mobile-bar button')];
+
+function updateBar(active) {
+  for (const b of barButtons) b.classList.toggle('active', b.dataset.sheet === active);
+}
+
+function renderMenuWalls() {
+  const box = $('menu-walls');
+  if (!box) return;
+  const st = store;
+  box.innerHTML = st.project.walls
+    .map((w) => {
+      const n = st.project.devices.filter((d) => d.wallId === w.id).length;
+      return `<button class="wall-item ${w.id === st.wall?.id ? 'active' : ''}" data-menu-wall="${w.id}">
+        <span class="wname">${esc(w.name)}</span>
+        <span class="wdim">${n} устр.</span>
+      </button>`;
+    })
+    .join('');
+}
+
+function closeSheets() {
+  bodyEl.classList.remove('sheet-palette', 'sheet-right', 'sheet-menu');
+  if (scrim) scrim.hidden = true;
+  updateBar(null);
+}
+
+function openSheet(name) {
+  closeSheets();
+  if (name === 'palette') bodyEl.classList.add('sheet-palette');
+  else if (name === 'menu') bodyEl.classList.add('sheet-menu');
+  else {
+    panels.setTab(name);
+    bodyEl.classList.add('sheet-right');
+  }
+  if (scrim) scrim.hidden = false;
+  updateBar(name);
+}
+
+for (const b of barButtons) {
+  b.addEventListener('click', () => {
+    const name = b.dataset.sheet;
+    const open =
+      name === 'palette'
+        ? bodyEl.classList.contains('sheet-palette')
+        : bodyEl.classList.contains('sheet-right') && panels.activeTab === name;
+    if (open) closeSheets();
+    else openSheet(name);
+  });
+}
+
+$('mobile-menu-btn')?.addEventListener('click', () => {
+  if (bodyEl.classList.contains('sheet-menu')) closeSheets();
+  else openSheet('menu');
+});
+scrim?.addEventListener('click', closeSheets);
+for (const b of document.querySelectorAll('[data-sheet-close]')) b.addEventListener('click', closeSheets);
+$('menu-sheet')?.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-menu-action]');
+  if (!b) return;
+  const fn = actions[b.dataset.menuAction];
+  closeSheets();
+  if (fn) setTimeout(fn, 0);
+});
+$('menu-walls')?.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-menu-wall]');
+  if (!b) return;
+  store.setActiveWall(b.dataset.menuWall);
+  closeSheets();
+  editor.fit();
+});
+$('btn-add-wall-mobile')?.addEventListener('click', () => {
+  closeSheets();
+  panels.openWallDialog(null);
+});
+// при выборе модели из палитры шторка закрывается — сразу видно лист стены
+$('palette-list')?.addEventListener('click', (e) => {
+  if (isMobile() && e.target.closest('[data-model]')) setTimeout(closeSheets, 60);
+});
+// вкладки правой панели обновляют подсветку таб-бара
+for (const b of document.querySelectorAll('#tabs button')) {
+  b.addEventListener('click', () => updateBar(b.dataset.tab));
+}
+MOBILE_MQ.addEventListener?.('change', closeSheets);
+
 /* ================== инструменты ================== */
 for (const b of document.querySelectorAll('#stage-toolbar [data-tool]')) {
   b.addEventListener('click', () => {
@@ -225,6 +318,24 @@ $('file-input')?.addEventListener('change', (e) => {
   const file = e.target.files?.[0];
   if (file) doImport(file);
   e.target.value = '';
+});
+
+/* подсказка на листе не должна мешать: через 8 секунд притухаем, при действии — снова ярко */
+setTimeout(() => $('canvas-hint')?.classList.add('dim'), 8000);
+for (const ev of ['pointerdown', 'keydown']) {
+  document.addEventListener(
+    ev,
+    () => $('canvas-hint')?.classList.remove('dim'),
+    { passive: true }
+  );
+}
+
+/* завершение трассы кабельного канала кнопкой в подсказке (мобильная версия) */
+document.addEventListener('click', (e) => {
+  if (e.target.closest?.('#btn-channel-done')) {
+    editor.finishChannel();
+    panels.toast('Кабельный канал добавлен');
+  }
 });
 
 /* ================== клавиатура ================== */
@@ -309,6 +420,7 @@ window.addEventListener('afterprint', () => {
   panels.renderAll();
   panels.updateToolButtons();
   updateHistoryButtons();
+  renderMenuWalls();
   editor._hint();
   requestAnimationFrame(() => {
     editor.fit();

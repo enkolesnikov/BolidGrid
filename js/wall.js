@@ -27,6 +27,12 @@ export class WallEditor {
     this.channelDraft = null;
     this.measure = null;
     this.hover = null;
+    this.pointers = new Map();
+    this.pinch = null;
+    this.touchPan = null;
+    this.pressStart = null;
+    this.longPressTimer = null;
+    this.longPressFired = false;
     this.spaceDown = false;
     this._raf = null;
     this._bind();
@@ -64,6 +70,14 @@ export class WallEditor {
       this._raf = null;
       this.render();
     });
+  }
+
+  _capture(e) {
+    try {
+      this._capture(e);
+    } catch {
+      /* синтетические события/неизвестный pointerId — не критично */
+    }
   }
 
   _bind() {
@@ -166,7 +180,8 @@ export class WallEditor {
       h: wall.height + SHEET_PAD * 2,
     };
   }
-  zoomAt(clientX, clientY, factor) {
+  /** зум без перерисовки (для жестов) — точка под курсором остаётся на месте */
+  _applyZoom(clientX, clientY, factor) {
     const [sx, sy] = this.clientToSvg(clientX, clientY);
     const fx = (sx - this.view.x) / this.view.w;
     const fy = (sy - this.view.y) / this.view.h;
@@ -176,7 +191,97 @@ export class WallEditor {
     this.view.h = nh;
     this.view.x = sx - fx * nw;
     this.view.y = sy - fy * nh;
+  }
+  zoomAt(clientX, clientY, factor) {
+    this._applyZoom(clientX, clientY, factor);
     this.render();
+  }
+
+  _startLongPress(e, info) {
+    this._clearLongPress();
+    if (e.pointerType === 'mouse') return;
+    this.longPressFired = false;
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      this.longPressFired = true;
+      try {
+        navigator.vibrate?.(12);
+      } catch {
+        /* необязательно */
+      }
+      this.store.toggleSelect({ type: info.type, id: info.id });
+      this.render();
+    }, 480);
+  }
+  _clearLongPress() {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+  }
+
+  /** два пальца: масштаб + панорама одним движением */
+  _beginPinch() {
+    this._clearLongPress();
+    const pts = [...this.pointers.values()].slice(0, 2);
+    const [a, b] = pts;
+    const mx = (a.clientX + b.clientX) / 2;
+    const my = (a.clientY + b.clientY) / 2;
+    this.pinch = {
+      dist: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+      midX: mx,
+      midY: my,
+    };
+    // одиночные жесты отменяем, но незавершённую правку положения — фиксируем
+    if (this.drag?.mode === 'device' && this.drag.moving) this.store.commit('перемещение устройств');
+    else this.store._before = null;
+    this.drag = null;
+    this.band = null;
+    this.tapDevice = null;
+    this.channelDraft = this.channelDraft || null;
+  }
+
+  _pinchMove() {
+    const pts = [...this.pointers.values()].slice(0, 2);
+    if (pts.length < 2) return;
+    const [a, b] = pts;
+    const dist = Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY));
+    const mx = (a.clientX + b.clientX) / 2;
+    const my = (a.clientY + b.clientY) / 2;
+    const factor = dist / (this.pinch.dist || dist);
+    this._applyZoom(mx, my, factor);
+    const scale = this.pxPerMm || 0.2;
+    this.view.x -= (mx - this.pinch.midX) / scale;
+    this.view.y -= (my - this.pinch.midY) / scale;
+    this.pinch.dist = dist;
+    this.pinch.midX = mx;
+    this.pinch.midY = my;
+    this.scheduleRender();
+  }
+
+  /**
+   * Ближайшее устройство/канал в пределах maxPx от точки — для попадания пальцем
+   * по мелким элементам на маленьком экране.
+   */
+  _findNearTarget(floor, maxPx = 30) {
+    const tol = maxPx / (this.pxPerMm || 0.2);
+    let best = null;
+    for (const d of this.store.wallDevices) {
+      const model = getModel(d.modelId);
+      const dx = Math.max(d.x - floor[0], 0, floor[0] - (d.x + model.w));
+      const dy = Math.max(d.y - floor[1], 0, floor[1] - (d.y + model.h));
+      const dist = Math.hypot(dx, dy);
+      if (dist <= tol && (!best || dist < best.dist)) best = { type: 'device', id: d.id, dist };
+    }
+    if (!best) {
+      for (const c of this.store.wallChannels) {
+        const r = closestOnPolyline(floor, c.points);
+        if (r && r.dist <= Math.max(tol, (c.width || 40) / 2) && (!best || r.dist < best.dist)) {
+          best = { type: 'channel', id: c.id, dist: r.dist };
+        }
+      }
+    }
+    return best;
   }
   zoomBy(factor) {
     const r = this.svg.getBoundingClientRect();
@@ -234,15 +339,23 @@ export class WallEditor {
 
   _onPointerDown(e) {
     this.svg.focus?.();
+    this.pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    if (this.pointers.size === 2) {
+      this._beginPinch();
+      return;
+    }
+    if (this.pinch) return;
     if (e.button === 1 || this.spaceDown || this.tool === 'pan') {
       this.pan = { sx: e.clientX, sy: e.clientY, vx: this.view.x, vy: this.view.y };
       this.svg.classList.add('panning');
-      this.svg.setPointerCapture?.(e.pointerId);
+      this._capture(e);
       return;
     }
     if (e.button !== 0) return;
-    const info = this._targetInfo(e);
+    let info = this._targetInfo(e);
     const floor = this.screenToFloor(e);
+    if (!info && e.pointerType !== 'mouse') info = this._findNearTarget(floor, 30);
+    this.pressStart = { x: e.clientX, y: e.clientY };
 
     if (this.tool === 'place' && this.store.armedModelId) {
       this._placeAt(floor);
@@ -261,10 +374,11 @@ export class WallEditor {
     }
     // --- выбор ---
     if (info) {
+      const touch = e.pointerType !== 'mouse';
       if (info.type === 'vertex') {
-        this.drag = { mode: 'vertex', channelId: info.id, index: info.index, before: JSON.stringify(this.store.project) };
+        this.drag = { mode: 'vertex', channelId: info.id, index: info.index };
         this.store.begin();
-        this.svg.setPointerCapture?.(e.pointerId);
+        this._capture(e);
         return;
       }
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
@@ -272,33 +386,63 @@ export class WallEditor {
         this.store.select([{ type: 'group', id: info.id }], additive);
         return;
       }
-      if (!this.store.isSelected(info.type, info.id)) {
-        this.store.select([{ type: info.type, id: info.id }], additive);
-      } else if (additive) {
-        this.store.toggleSelect({ type: info.type, id: info.id });
+      if (info.type === 'channel') {
+        this.store.select([{ type: 'channel', id: info.id }], additive);
+        this.render();
         return;
       }
-      if (info.type === 'device') {
-        this.store.begin();
-        this.drag = {
-          mode: 'device',
-          primaryId: info.id,
-          start: floor,
-          moving: false,
-          origins: this.store.selectedDevices().map((d) => ({ id: d.id, x: d.x, y: d.y, wallId: d.wallId })),
-        };
-        this.svg.setPointerCapture?.(e.pointerId);
+
+      // устройство
+      const already = this.store.isSelected('device', info.id);
+      if (!touch) {
+        if (!already) this.store.select([{ type: 'device', id: info.id }], additive);
+        else if (additive) {
+          this.store.toggleSelect({ type: 'device', id: info.id });
+          return;
+        }
+      } else {
+        // на сенсорном экране выделение меняем по отпусканию пальца,
+        // а долгое нажатие добавляет/убирает устройство из выделения
+        this.tapDevice = { id: info.id, wasSelected: already };
+        if (!already) this._startLongPress(e, info);
+        else this._startLongPress(e, info, 'toggle');
       }
+
+      this.store.begin();
+      const origins = this.store.selectedDevices().map((d) => ({ id: d.id, x: d.x, y: d.y, wallId: d.wallId }));
+      const dev = this.store.getDevice(info.id);
+      if (touch && !already && dev && !origins.some((o) => o.id === dev.id)) {
+        origins.push({ id: dev.id, x: dev.x, y: dev.y, wallId: dev.wallId });
+      }
+      this.drag = {
+        mode: 'device',
+        primaryId: info.id,
+        start: floor,
+        moving: false,
+        origins,
+        touchNew: touch && !already,
+      };
+      this._capture(e);
       this.render();
       return;
     }
-    // пустое место — рамка выделения
+    // пустое место: на сенсорном экране — панорама, на десктопе — рамка выделения
+    if (e.pointerType !== 'mouse') {
+      this.touchPan = { sx: e.clientX, sy: e.clientY, vx: this.view.x, vy: this.view.y, moved: false };
+      this._capture(e);
+      return;
+    }
     if (!e.shiftKey) this.store.clearSelection();
     this.band = { a: floor, b: floor, additive: e.shiftKey };
     this.render();
   }
 
   _onPointerMove(e) {
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    if (this.pinch && this.pointers.size >= 2) {
+      this._pinchMove();
+      return;
+    }
     const floor = this.screenToFloor(e);
     this.pointer = { floor, clientX: e.clientX, clientY: e.clientY };
     if (this.pan) {
@@ -308,10 +452,32 @@ export class WallEditor {
       this.render();
       return;
     }
+    if (this.pressStart && Math.hypot(e.clientX - this.pressStart.x, e.clientY - this.pressStart.y) > 8) {
+      this._clearLongPress();
+    }
+    if (this.touchPan) {
+      const dx = e.clientX - this.touchPan.sx;
+      const dy = e.clientY - this.touchPan.sy;
+      if (!this.touchPan.moved && Math.hypot(dx, dy) > 4) this.touchPan.moved = true;
+      if (this.touchPan.moved) {
+        const scale = this.pxPerMm || 0.2;
+        this.view.x = this.touchPan.vx - dx / scale;
+        this.view.y = this.touchPan.vy - dy / scale;
+        this.scheduleRender();
+      }
+      return;
+    }
     if (this.drag?.mode === 'device') {
       const dx = floor[0] - this.drag.start[0];
       const dy = floor[1] - this.drag.start[1];
-      if (!this.drag.moving && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) this.drag.moving = true;
+      if (!this.drag.moving && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        this.drag.moving = true;
+        this._clearLongPress();
+        if (this.drag.touchNew) {
+          this.drag.touchNew = false;
+          this.store.select([{ type: 'device', id: this.drag.primaryId }]);
+        }
+      }
       if (this.drag.moving) this._moveDevices(dx, dy);
       return;
     }
@@ -348,6 +514,20 @@ export class WallEditor {
   }
 
   _onPointerUp(e) {
+    this.pointers.delete(e.pointerId);
+    if (this.pinch) {
+      if (this.pointers.size < 2) this.pinch = null;
+      this.render();
+      return;
+    }
+    if (this.touchPan) {
+      const tp = this.touchPan;
+      this.touchPan = null;
+      if (!tp.moved) this.store.clearSelection();
+      this.render();
+      return;
+    }
+    this._clearLongPress();
     if (this.pan) {
       this.pan = null;
       this.svg.classList.remove('panning');
@@ -357,8 +537,14 @@ export class WallEditor {
     if (this.drag?.mode === 'device') {
       const d = this.drag;
       this.drag = null;
+      const tapped = this.tapDevice;
+      const longPressed = this.longPressFired;
+      this.tapDevice = null;
+      this.longPressFired = false;
+      this._clearLongPress();
       if (d.moving) this.store.commit('перемещение устройств');
       else this.store._before = null;
+      if (!d.moving && tapped && !longPressed) this.store.select([{ type: 'device', id: tapped.id }]);
       this.render();
       return;
     }
@@ -740,25 +926,43 @@ export class WallEditor {
 
   _hint() {
     if (!this.hintEl) return;
-    let text = '';
-    if (this.store.tool === 'place' && this.store.armedModelId) {
-      const model = getModel(this.store.armedModelId);
-      text = `Размещение: <b>${esc(model.name)}</b> — кликните на стене. <kbd>Esc</kbd> — отмена`;
-    } else if (this.store.tool === 'channel') {
-      text = this.channelDraft
-        ? 'Клик — следующая точка (по горизонтали/вертикали) · <kbd>Enter</kbd> или двойной клик — завершить · <kbd>Esc</kbd> — отмена'
-        : 'Кабельный канал: кликните начало трассы. Точки выравниваются по горизонтали/вертикали.';
-    } else if (this.store.tool === 'measure') {
-      text = 'Измерение: клик — точка A, второй клик — точка B. <kbd>Esc</kbd> — выход.';
-    } else if (this.store.tool === 'pan') {
-      text = 'Панорама: тяните мышью. Колесо — масштаб.';
+    const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+    const tool = this.store.tool;
+    const modelName = this.store.armedModelId ? getModel(this.store.armedModelId).name : '';
+    let text;
+
+    if (tool === 'channel') {
+      if (this.channelDraft) {
+        const n = this.channelDraft.points.length;
+        text = coarse
+          ? `Точек трассы: <b>${n}</b> · тап — следующая точка <button class="hint-btn" id="btn-channel-done">Готово</button>`
+          : `Точек трассы: <b>${n}</b> · клик — следующая точка · <kbd>Enter</kbd> или двойной клик — завершить · <kbd>Esc</kbd> — отмена`;
+      } else {
+        text = coarse
+          ? 'Кабельный канал: тап — начало трассы. Точки выравниваются по горизонтали/вертикали.'
+          : 'Кабельный канал: кликните начало трассы. Точки выравниваются по горизонтали/вертикали.';
+      }
+    } else if (tool === 'place' && this.store.armedModelId) {
+      text = coarse
+        ? `Размещение: <b>${esc(modelName)}</b> — тапните по стене.`
+        : `Размещение: <b>${esc(modelName)}</b> — кликните на стене. <kbd>Esc</kbd> — отмена`;
+    } else if (tool === 'measure') {
+      text = coarse
+        ? 'Измерение: тап — точка A, второй тап — точка B.'
+        : 'Измерение: клик — точка A, второй клик — точка B. <kbd>Esc</kbd> — выход.';
+    } else if (tool === 'pan') {
+      text = coarse ? 'Панорама: тяните лист одним пальцем, масштаб — двумя.' : 'Панорама: тяните мышью. Колесо — масштаб.';
+    } else if (coarse) {
+      text = 'Тап — выбрать · удержание — добавить в выделение · два пальца — масштаб.';
     } else {
       text = 'Выбор: клик по устройству/каналу, рамкой — групповое выделение. <kbd>G</kbd> — объединить в шлейф, <kbd>Del</kbd> — удалить.';
     }
+
     if (text === this._hintCache) return;
     this._hintCache = text;
     this.hintEl.innerHTML = text;
   }
+
 
   /* ================= навигация к объекту ================= */
   focusOn(x, yFloor, span = 900) {
