@@ -146,6 +146,30 @@ async function exitPlace(page) {
   }
 }
 
+async function fillWallDialog(page, { name, width, height }) {
+  // диалог стены: дождаться полей, заполнить и проверить значения (устраняет гонку при открытии)
+  await page.waitForSelector('#modal:not([hidden]) #dlg-wall-name', { timeout: 8000 });
+  await page.waitForTimeout(120);
+  const dlg = page.locator('#modal');
+  const setField = async (id, value) => {
+    const field = dlg.locator(`#${id}`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await field.fill(String(value));
+      if ((await field.inputValue()) === String(value)) return;
+      await page.waitForTimeout(120);
+    }
+    throw new Error(`Не удалось заполнить поле ${id}`);
+  };
+  await setField('dlg-wall-name', name);
+  await setField('dlg-wall-w', width);
+  await setField('dlg-wall-h', height);
+  return page.evaluate(() => ({
+    name: document.getElementById('dlg-wall-name').value,
+    width: document.getElementById('dlg-wall-w').value,
+    height: document.getElementById('dlg-wall-h').value,
+  }));
+}
+
 async function placeModel(page, modelId, fx, fy) {
   await armModel(page, modelId);
   await clickCanvas(page, fx, fy);
@@ -669,10 +693,8 @@ async function main() {
 
     // добавить стену
     await page.locator('#btn-add-wall').click();
-    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    await page.fill('#dlg-wall-name', 'QA-стена');
-    await page.fill('#dlg-wall-w', '3.5');
-    await page.fill('#dlg-wall-h', '2.2');
+    const dlgVals = await fillWallDialog(page, { name: 'QA-стена', width: '3.5', height: '2.2' });
+    check('B: диалог стены сохранил введённые значения', dlgVals.name === 'QA-стена' && dlgVals.width === '3.5' && dlgVals.height === '2.2', JSON.stringify(dlgVals));
     await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
     await sleep(450);
     const sAddWall = await getState(page);
@@ -730,10 +752,7 @@ async function main() {
     // последняя стена не удаляется, а демо-стену удаляем при наличии второй
     await page.locator('#walls-list [data-wall-del="${demoWall1.id}"]').click().catch(() => {});
     await page.locator('#btn-add-wall').click();
-    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    await page.fill('#dlg-wall-name', 'QA-врем');
-    await page.fill('#dlg-wall-w', '3');
-    await page.fill('#dlg-wall-h', '2.5');
+    await fillWallDialog(page, { name: 'QA-врем', width: '3', height: '2.5' });
     await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
     await sleep(450);
     const tempWall = await page.evaluate(() => {
@@ -1350,10 +1369,7 @@ async function main() {
     const wall1Id = demoWalls[0].id;
     // добавляем вторую стену и ставим на неё прибор — получаем обозначение 2.x
     await page.locator('#btn-add-wall').click();
-    await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
-    await page.fill('#dlg-wall-name', 'QA-нумерация');
-    await page.fill('#dlg-wall-w', '3');
-    await page.fill('#dlg-wall-h', '2.5');
+    await fillWallDialog(page, { name: 'QA-нумерация', width: '3', height: '2.5' });
     await page.locator('#modal-actions button', { hasText: 'Создать' }).click();
     await sleep(450);
     await placeModel(page, 'sp2', 0.45, 0.55);
