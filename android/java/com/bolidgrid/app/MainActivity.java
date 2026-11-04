@@ -22,9 +22,18 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * BolidGrid — офлайн-оболочка Android вокруг монтажного плана стены.
@@ -39,9 +48,13 @@ public class MainActivity extends Activity {
     private static final int REQUEST_STORAGE = 1002;
     private static final String BG = "#0B1220";
 
+    private static final int MAX_IMPORT_BYTES = 20 * 1024 * 1024;
+
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
     private Runnable pendingStorageAction;
+    private String pendingImportText;
+    private boolean pageLoaded;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -70,7 +83,14 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setUserAgentString(s.getUserAgentString() + " BolidGridApp/1.0");
 
-        webView.setWebViewClient(new AssetServer(this));
+        webView.setWebViewClient(new AssetServer(this) {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                pageLoaded = true;
+                maybeImportPending();
+            }
+        });
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
@@ -177,6 +197,7 @@ public class MainActivity extends Activity {
         });
         webView.addJavascriptInterface(new NativeBridge(this), "BolidGridNative");
         webView.loadUrl(AssetServer.START_URL);
+        handleImportIntent(getIntent());
 
         Window window = getWindow();
         window.setStatusBarColor(Color.parseColor(BG));
@@ -193,6 +214,76 @@ public class MainActivity extends Activity {
                 }
             });
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleImportIntent(intent);
+    }
+
+    /** Открытие/«Поделиться» JSON-проектом из другого приложения. */
+    private void handleImportIntent(Intent intent) {
+        if (intent == null) return;
+        String action = intent.getAction();
+        Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(action)) {
+            uri = intent.getData();
+        } else if (Intent.ACTION_SEND.equals(action)) {
+            if (intent.hasExtra(Intent.EXTRA_STREAM)) {
+                uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            } else if (intent.hasExtra(Intent.EXTRA_TEXT)) {
+                pendingImportText = intent.getStringExtra(Intent.EXTRA_TEXT);
+                maybeImportPending();
+                return;
+            }
+        }
+        if (uri == null) return;
+        try {
+            String text = readTextFromUri(uri);
+            if (text == null) {
+                Toast.makeText(this, "Не удалось открыть файл проекта", Toast.LENGTH_LONG).show();
+                return;
+            }
+            pendingImportText = text;
+            maybeImportPending();
+        } catch (Exception e) {
+            Toast.makeText(this, "Не удалось прочитать файл: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String readTextFromUri(Uri uri) throws IOException {
+        InputStream stream;
+        if ("file".equals(uri.getScheme())) {
+            stream = new FileInputStream(uri.getPath());
+        } else {
+            stream = getContentResolver().openInputStream(uri);
+        }
+        if (stream == null) return null;
+        try {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            long total = 0;
+            while ((read = stream.read(buffer)) != -1) {
+                total += read;
+                if (total > MAX_IMPORT_BYTES) throw new IOException("файл слишком большой");
+                out.write(buffer, 0, read);
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        } finally {
+            stream.close();
+        }
+    }
+
+    private void maybeImportPending() {
+        if (pendingImportText == null || !pageLoaded || webView == null) return;
+        final String text = pendingImportText;
+        pendingImportText = null;
+        webView.evaluateJavascript(
+                "window.BolidGrid && window.BolidGrid.importProjectText(" + JSONObject.quote(text) + ");",
+                null);
     }
 
     @Override

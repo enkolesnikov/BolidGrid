@@ -124,20 +124,25 @@ function doExport() {
   panels.toast('Проект выгружен в JSON');
 }
 
+function applyProjectText(text) {
+  const data = JSON.parse(String(text));
+  const project = data.project || data;
+  if (!project || !Array.isArray(project.walls)) throw new Error('нет массива walls');
+  store.replaceProject(project);
+  editor.fit();
+  panels.toast('Проект загружен из файла');
+}
+
 function doImport(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const data = JSON.parse(String(reader.result));
-      const project = data.project || data;
-      if (!project || !Array.isArray(project.walls)) throw new Error('нет массива walls');
-      store.replaceProject(project);
-      editor.fit();
-      panels.toast('Проект загружен из файла');
+      applyProjectText(reader.result);
     } catch (err) {
       panels.toast(`Не удалось прочитать файл: ${err.message}`, true);
     }
   };
+  reader.onerror = () => panels.toast('Не удалось прочитать файл', true);
   reader.readAsText(file);
 }
 
@@ -632,6 +637,16 @@ window.BolidGrid = {
   panels,
   getModel,
   loadDemo,
+  /** Загрузка проекта из текста JSON (используется Android-оболочкой при «Открыть/Поделиться»). */
+  importProjectText: (text) => {
+    try {
+      applyProjectText(text);
+      return true;
+    } catch (err) {
+      panels.toast(`Не удалось прочитать файл: ${err.message}`, true);
+      return false;
+    }
+  },
 };
 
 /* В Android-оболочке нет window.print — печать отдаём системному PrintManager. */

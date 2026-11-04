@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.bolidgrid.app"
-    android:versionCode="2"
-    android:versionName="1.1.0">
+    android:versionCode="3"
+    android:versionName="1.2.0">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="37" />
 
@@ -31,6 +31,22 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- «Открыть» JSON-проект из файлового менеджера -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="text/json" />
+            </intent-filter>
+            <!-- «Поделиться» JSON-файлом проекта -->
+            <intent-filter android:label="@string/app_name">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="text/json" />
             </intent-filter>
         </activity>
     </application>
