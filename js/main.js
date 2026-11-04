@@ -622,3 +622,8 @@ window.BolidGrid = {
   getModel,
   loadDemo,
 };
+
+/* В Android-оболочке нет window.print — печать отдаём системному PrintManager. */
+if (window.BolidGridNative?.printPage) {
+  window.print = () => window.BolidGridNative.printPage();
+}

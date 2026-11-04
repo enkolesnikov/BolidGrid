@@ -78,10 +78,6 @@ const TRANSLIT = {
 };
 
 export function download(filename, text, mime = 'application/json') {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
   // ASCII-имена надёжно сохраняют расширение даже в мобильных и headless-браузерах.
   const safeName = String(filename)
     .replace(/[а-яё]/gi, (ch) => {
@@ -89,8 +85,30 @@ export function download(filename, text, mime = 'application/json') {
       return ch === ch.toUpperCase() ? latin.charAt(0).toUpperCase() + latin.slice(1) : latin;
     })
     .replace(/[^A-Za-z0-9._-]+/g, '_')
-    .replace(/_+/g, '_');
-  a.download = safeName || 'BolidGrid';
+    .replace(/_+/g, '_') || 'BolidGrid';
+
+  // В нативной Android-оболочке blob-скачивание не поддерживается: отдаём файл мосту.
+  const native = window.BolidGridNative;
+  if (native && typeof native.saveFile === 'function') {
+    try {
+      const bytes = new TextEncoder().encode(String(text));
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      native.saveFile(safeName, btoa(binary), mime);
+      return;
+    } catch (e) {
+      console.warn('Нативное сохранение недоступно, используем браузерное', e);
+    }
+  }
+
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = safeName;
   document.body.appendChild(a);
   a.click();
   a.remove();

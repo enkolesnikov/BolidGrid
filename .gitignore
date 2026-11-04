@@ -6,3 +6,9 @@ tests/output/
 tests/screenshots/
 playwright-report/
 dist/
+.android-sdk/
+build/
+android/assets/www/
+android/keystore/
+android/local.properties
+.android-home/

@@ -57,6 +57,21 @@ npm start
 
 Откройте `http://localhost:8080`. Production-сборка не требуется: приложение состоит из HTML, CSS, SVG и нативных JavaScript-модулей.
 
+## Android APK
+
+Версия для телефона — та же офлайн-оболочка для **Android 17 (API 37, minSdk 26)**:
+WebView с локальными ассетами, без интернета, экспорт файлов в «Загрузки/BolidGrid»
+и системная печать. Исходники оболочки — в [`android/`](android/), инструкция — в
+[`docs/ANDROID.md`](docs/ANDROID.md).
+
+Готовый APK: [GitHub Releases](https://github.com/enkolesnikov/BolidGrid/releases/latest).
+Сборка из исходников:
+
+```bash
+ALLOW_NEW_KEYSTORE=1 bash android/build-apk.sh   # первая сборка создаёт ключ
+bash android/build-apk.sh                        # build/BolidGrid-<версия>.apk
+```
+
 ## Проверки
 
 ```bash
