@@ -5,7 +5,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.DialogInterface;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -34,10 +36,12 @@ import android.widget.Toast;
 public class MainActivity extends Activity {
 
     private static final int REQUEST_FILE_CHOOSER = 1001;
+    private static final int REQUEST_STORAGE = 1002;
     private static final String BG = "#0B1220";
 
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
+    private Runnable pendingStorageAction;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -222,8 +226,13 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        if (webView != null) {
+            // debounce автосохранения (500 мс) мог не сработать — фиксируем проект в localStorage
+            webView.evaluateJavascript(
+                    "window.BolidGrid&&window.BolidGrid.store&&window.BolidGrid.store.save();", null);
+            webView.onPause();
+        }
         super.onPause();
-        if (webView != null) webView.onPause();
     }
 
     @Override
@@ -244,6 +253,34 @@ public class MainActivity extends Activity {
 
     WebView getWebView() {
         return webView;
+    }
+
+    /** Есть ли доступ к общим «Загрузкам» (Android 8–9 требует разрешение). */
+    boolean hasLegacyStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true;
+        return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Выполнить сохранение; на Android 8–9 при необходимости сначала спросить разрешение. */
+    void withStoragePermission(Runnable action) {
+        if (hasLegacyStoragePermission()) {
+            action.run();
+            return;
+        }
+        pendingStorageAction = action;
+        requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_STORAGE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_STORAGE) return;
+        Runnable action = pendingStorageAction;
+        pendingStorageAction = null;
+        if (action == null) return;
+        // при отказе сохраняем в папку приложения, но не теряем данные
+        action.run();
     }
 
     /** Печать листа через системный PrintManager (PDF/принтер). */

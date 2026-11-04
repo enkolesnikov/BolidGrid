@@ -178,6 +178,17 @@ const actions = {
     }
   },
   import: () => $('file-input')?.click(),
+  'save-project': () => {
+    store.save();
+    const base = (store.project.meta.name || 'BolidGrid').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
+    const now = new Date();
+    const pad = (v) => String(v).padStart(2, '0');
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    download(`${base}_${stamp}.json`, store.serialize());
+    panels.toast(window.BolidGridNative?.saveFile
+      ? 'Проект сохраняется в «Загрузки/BolidGrid»'
+      : 'Резервная копия проекта сохранена в файл');
+  },
   export: doExport,
   print: () => window.print(),
   save: () => {
@@ -517,7 +528,7 @@ window.addEventListener('keydown', (e) => {
     actions.redo();
   } else if (ctrl && e.key.toLowerCase() === 's') {
     e.preventDefault();
-    actions.save();
+    actions['save-project']();
   } else if (ctrl && e.key.toLowerCase() === 'd') {
     e.preventDefault();
     if (store.selectedDevices().length) store.duplicateDevices();

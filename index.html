@@ -39,7 +39,7 @@
     <button class="btn icon" data-action="redo" title="Повторить (Ctrl+Y)" aria-label="Повторить"><svg><use href="#i-redo"/></svg></button>
     <span class="sep"></span>
     <button class="btn quiet-action" data-action="import">Импорт</button>
-    <button class="btn" data-action="export" title="Скачать проект JSON">Проект</button>
+    <button class="btn" data-action="save-project" title="Сохранить проект в файл (Ctrl+S)">Сохранить</button>
     <button class="btn" data-action="export-svg">SVG</button>
     <button class="btn quiet-action" data-action="print">Печать</button>
     <button class="btn quiet-action" data-action="save" hidden>Сохранить</button>
@@ -116,7 +116,8 @@
     <div class="menu-grid">
       <button class="btn" data-menu-action="edit-project">Данные объекта</button>
       <button class="btn" data-menu-action="import">Импорт JSON</button>
-      <button class="btn" data-menu-action="export">Экспорт JSON</button>
+      <button class="btn" data-menu-action="save-project">Сохранить проект</button>
+      <button class="btn" data-menu-action="export">Скачать JSON</button>
       <button class="btn" data-menu-action="export-svg">Экспорт SVG</button>
       <button class="btn" data-menu-action="print">Печать / PDF</button>
       <button class="btn" data-menu-action="save" hidden>Сохранить</button>
@@ -130,7 +131,7 @@
     <div class="menu-toggles"><label class="switch"><input type="checkbox" id="chk-snap-mobile" checked> Привязка и направляющие</label><label class="switch"><input type="checkbox" id="chk-grid-mobile" checked> Сетка</label><label class="switch">Шаг, мм <select id="sel-grid" class="mini-select"><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></label></div>
     <div class="pal-group-title">Стены</div><div id="menu-walls" class="menu-walls"></div>
     <button class="btn" id="btn-add-wall-mobile"><svg><use href="#i-plus"/></svg> Добавить стену</button>
-    <p class="menu-note">Проект автоматически сохраняется в этом браузере. Для переноса на другое устройство используйте экспорт JSON.</p>
+    <p class="menu-note">Проект сохраняется автоматически. «Сохранить проект» создаёт резервную копию JSON — на телефоне она попадает в «Загрузки/BolidGrid».</p>
   </div>
 </div>
 

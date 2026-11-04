@@ -1166,7 +1166,7 @@ async function main() {
     section('B12. Экспорт JSON / SVG → импорт обратно');
     const [jsonDownload] = await Promise.all([
       page.waitForEvent('download', { timeout: 10000 }),
-      page.locator('#topbar [data-action="export"]').click(),
+      page.locator('#topbar [data-action="save-project"]').click(),
     ]);
     const jsonPath = OUT + 'qa-export.json';
     await jsonDownload.saveAs(jsonPath);

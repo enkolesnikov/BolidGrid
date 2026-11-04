@@ -29,8 +29,8 @@ ZIPALIGN="$BT_DIR/zipalign"
 APKSIGNER="$BT_DIR/apksigner"
 D8="$BT_DIR/d8"
 PACKAGE="com.bolidgrid.app"
-VERSION_NAME="${VERSION_NAME:-1.0.0}"
-VERSION_CODE="${VERSION_CODE:-1}"
+VERSION_NAME="${VERSION_NAME:-1.1.0}"
+VERSION_CODE="${VERSION_CODE:-2}"
 OUT_APK="$BUILD_DIR/BolidGrid-${VERSION_NAME}.apk"
 KEYSTORE="$ANDROID_DIR/keystore/bolidgrid.jks"
 KS_PASS_FILE="$ANDROID_DIR/keystore/pass.txt"
@@ -48,9 +48,22 @@ need javac; need java; need zip; need keytool
 
 say "1/6 Копирование веб-приложения в assets/www"
 rm -rf "$ANDROID_DIR/assets"
-mkdir -p "$ANDROID_DIR/assets/www"
-cp "$ROOT/index.html" "$ANDROID_DIR/assets/www/"
-cp -a "$ROOT/css" "$ROOT/js" "$ROOT/data" "$ANDROID_DIR/assets/www/"
+WWW="$ANDROID_DIR/assets/www"
+mkdir -p "$WWW/js" "$WWW/css" "$WWW/data"
+cp "$ROOT/index.html" "$WWW/"
+node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));fs.writeFileSync(process.argv[2],JSON.stringify(p))" "$ROOT/data/spec.json" "$WWW/data/spec.json"
+ESBUILD="$ROOT/node_modules/.bin/esbuild"
+if [ -x "$ESBUILD" ] && [ "${MINIFY:-1}" != "0" ]; then
+    # минификация без изменения структуры ES-модулей: меньше APK и быстрее первый разбор
+    for f in "$ROOT"/js/*.js; do
+        "$ESBUILD" "$f" --minify --format=esm --outfile="$WWW/js/$(basename "$f")" --log-level=error
+    done
+    "$ESBUILD" "$ROOT/css/app.css" --minify --outfile="$WWW/css/app.css" --log-level=error
+    echo "    JS/CSS минифицированы"
+else
+    cp -a "$ROOT/js" "$ROOT/css" "$WWW/"
+    echo "    esbuild не найден — ассеты скопированы как есть (MINIFY=0)"
+fi
 
 say "2/6 Компиляция ресурсов и манифеста (aapt)"
 rm -rf "$BUILD_DIR/gen" "$BUILD_DIR/classes" "$BUILD_DIR/dex"

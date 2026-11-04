@@ -39,18 +39,23 @@ public class NativeBridge {
             toast("Не удалось сохранить файл: " + e.getMessage());
             return;
         }
-        new Thread(new Runnable() {
+        activity.withStoragePermission(new Runnable() {
             @Override
             public void run() {
-                final String message = write(fileName, type, data);
-                activity.runOnUiThread(new Runnable() {
+                new Thread(new Runnable() {
                     @Override
                     public void run() {
-                        toast(message);
+                        final String message = write(fileName, type, data);
+                        activity.runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                toast(message);
+                            }
+                        });
                     }
-                });
+                }).start();
             }
-        }).start();
+        });
     }
 
     @JavascriptInterface
@@ -109,7 +114,13 @@ public class NativeBridge {
                 resolver.update(uri, values, null, null);
                 return "Сохранено: Загрузки/BolidGrid/" + fileName;
             }
-            File dir = new File(activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "BolidGrid");
+            File baseDir;
+            if (activity.hasLegacyStoragePermission()) {
+                baseDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            } else {
+                baseDir = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+            }
+            File dir = new File(baseDir, "BolidGrid");
             if (!dir.exists() && !dir.mkdirs()) return "Не удалось создать каталог для файлов";
             File out = new File(dir, fileName);
             FileOutputStream stream = new FileOutputStream(out);
