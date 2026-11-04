@@ -301,6 +301,48 @@ export const MODELS = [
     vendor: '—',
   }),
   M({
+    id: 'bki', kind: 'modul', symbol: 'block', tagText: 'БКИ', terminals: 2, w: 156, h: 107,
+    name: 'С2000-БКИ', model: 'С2000-БКИ',
+    full: 'Блок контроля и индикации С2000-БКИ (2×RS-485)',
+    vendor: 'ЗАО НВП «БОЛИД»',
+  }),
+  M({
+    id: 'ethernet', kind: 'other', symbol: 'block', tagText: 'ETH', terminals: 2, w: 110, h: 90,
+    name: 'С2000-Ethernet', model: 'С2000-Ethernet',
+    full: 'Преобразователь интерфейса С2000-Ethernet',
+    vendor: 'ЗАО НВП «БОЛИД»',
+  }),
+  M({
+    id: 'rip56', kind: 'bp', symbol: 'rip', w: 450, h: 400,
+    name: 'РИП-12 исп.56', model: 'РИП-12 исп.56',
+    full: 'Источник питания резервированный РИП-12 исп.56 (РИП-12-6/80М3-Р-RS), 12 В 6 А',
+    vendor: 'ЗАО НВП «БОЛИД»',
+  }),
+  M({
+    id: 'ar8', kind: 'rasshiritel', symbol: 'block', tagText: 'АР8', terminals: 2, w: 156, h: 107,
+    name: 'С2000-АР8', model: 'С2000-АР8',
+    full: 'Адресный расширитель С2000-АР8',
+    vendor: 'ЗАО НВП «БОЛИД»',
+  }),
+  M({
+    id: 'astra_rim', kind: 'ppkup', symbol: 'block', tagText: 'РИ-М', terminals: 4, w: 150, h: 120,
+    name: 'Астра РИ-М РР', model: 'Астра РИ-М РР',
+    full: 'Прибор приёмно-контрольный охранно-пожарный «Астра РИ-М РР»',
+    vendor: 'ЗАО НТЦ «ТЕКО»',
+  }),
+  M({
+    id: 'astra_824', kind: 'modul', symbol: 'block', tagText: '824', terminals: 2, w: 90, h: 80,
+    name: 'Астра-824', model: 'Астра-824',
+    full: 'Блок реле «Астра-824»',
+    vendor: 'ЗАО НТЦ «ТЕКО»',
+  }),
+  M({
+    id: 'kdl2i', kind: 'rasshiritel', symbol: 'block', tagText: 'КДЛ2И', terminals: 2, w: 156, h: 107,
+    name: 'С2000-КДЛ-2И №1', model: 'С2000-КДЛ-2И',
+    full: 'Контроллер двухпроводной линии с гальванической изоляцией С2000-КДЛ-2И исп.01 (2×RS-485)',
+    vendor: 'ЗАО НВП «БОЛИД»',
+  }),
+  M({
     id: 'custom', kind: 'other', symbol: 'generic', w: 150, h: 150,
     name: 'Прочее устройство', model: '—',
     full: 'Прочее устройство (размеры и наименование задаются в свойствах)',
