@@ -387,3 +387,74 @@ export const CHANNEL_KIND_IDS = CHANNEL_KINDS.map((k) => k.id);
 
 /** Цвета короба (быстрый выбор в свойствах трассы). */
 export const CHANNEL_COLORS = ['#f8fafc', '#cbd5e1', '#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#475569'];
+
+/* ---------- клеммы приборов и кабели ---------- */
+
+export const TERMINAL_KIND_LABELS = {
+  power220: '220 В',
+  power12: '12–24 В',
+  rs485: 'RS-485',
+  signal: 'Сигнал',
+  lan: 'LAN',
+};
+
+export const TERMINAL_KIND_COLORS = {
+  power220: '#ef4444',
+  power12: '#f59e0b',
+  rs485: '#22c55e',
+  signal: '#38bdf8',
+  lan: '#a855f7',
+};
+
+const TERMINAL_PROFILES = {
+  ppkup: [
+    ['L', 'power220'], ['N', 'power220'], ['PE', 'power220'],
+    ['+12', 'power12'], ['0В', 'power12'],
+    ['A', 'rs485'], ['B', 'rs485'],
+  ],
+  blok_sp: [['A', 'rs485'], ['B', 'rs485'], ['+12', 'power12'], ['0В', 'power12'], ['Вых.1', 'signal'], ['Вых.2', 'signal']],
+  blok_kpb: [['A', 'rs485'], ['B', 'rs485'], ['+12', 'power12'], ['0В', 'power12'], ['Вых.1', 'signal'], ['Вых.2', 'signal']],
+  rasshiritel: [['A', 'rs485'], ['B', 'rs485'], ['+12', 'power12'], ['0В', 'power12']],
+  bp: [['L', 'power220'], ['N', 'power220'], ['PE', 'power220'], ['+12', 'power12'], ['0В', 'power12'], ['A', 'rs485'], ['B', 'rs485']],
+  modul: [['A', 'rs485'], ['B', 'rs485'], ['+12', 'power12'], ['0В', 'power12']],
+  other: [['A', 'rs485'], ['B', 'rs485'], ['+12', 'power12'], ['0В', 'power12']],
+};
+
+const MODEL_TERMINAL_OVERRIDES = {
+  socket: [['L', 'power220'], ['N', 'power220'], ['PE', 'power220']],
+  switch: [['L', 'power220'], ['N', 'power220'], ['PE', 'power220'], ['LAN1', 'lan'], ['LAN2', 'lan']],
+  ethernet: [['+12', 'power12'], ['0В', 'power12'], ['LAN', 'lan']],
+  custom: [['A', 'rs485'], ['B', 'rs485'], ['+12', 'power12'], ['0В', 'power12']],
+};
+
+/** Клеммы, которые реально есть у прибора (по типу/модели). */
+export function terminalsForModel(model) {
+  const profile = MODEL_TERMINAL_OVERRIDES[model.id] || TERMINAL_PROFILES[model.kind] || TERMINAL_PROFILES.other;
+  return profile.map(([label, kind], i) => ({ id: `t${i + 1}`, label, kind }));
+}
+
+/** Кабели для соединений (в коробе). */
+export const CABLE_MODELS = [
+  { id: 'kps-2x075', label: 'КПСнг(А)-FRHF 1×2×0,75', kind: 'signal', color: '#38bdf8' },
+  { id: 'kps-2x10', label: 'КПСнг(А)-FRHF 1×2×1,0', kind: 'signal', color: '#0ea5e9' },
+  { id: 'kps-4x075', label: 'КПСнг(А)-FRHF 2×2×0,75', kind: 'signal', color: '#22c55e' },
+  { id: 'pvs-2x15', label: 'ПВС 2×1,5 (12–24 В)', kind: 'power12', color: '#f59e0b' },
+  { id: 'shvvp-2x05', label: 'ШВВП 2×0,5 (12–24 В)', kind: 'power12', color: '#fbbf24' },
+  { id: 'vvg-3x15', label: 'ВВГнг(А)-LS 3×1,5 (220 В)', kind: 'power220', color: '#ef4444' },
+];
+
+export const CABLE_BY_ID = new Map(CABLE_MODELS.map((c) => [c.id, c]));
+
+/** Кабель по умолчанию для пары клемм (220 В не тянем в короб). */
+export function defaultCableForTerminals(a, b) {
+  if (!a || !b) return 'kps-2x075';
+  if (a.kind === 'power220' || b.kind === 'power220') return null;
+  if (a.kind === 'power12' || b.kind === 'power12') return 'pvs-2x15';
+  return 'kps-2x075';
+}
+
+/** Полное описание клеммы прибора (или null). */
+export function findTerminal(device, terminalId) {
+  const model = MODEL_BY_ID.get(device.modelId) || MODEL_BY_ID.get('custom');
+  return terminalsForModel(model).find((t) => t.id === terminalId) || null;
+}

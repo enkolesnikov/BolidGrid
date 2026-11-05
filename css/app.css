@@ -715,3 +715,18 @@ body{grid-template-columns:minmax(0,1fr)}
   .review-item{min-height:64px;padding:12px}.review-item b{font-size:14px}
   .gap-control>.btn{min-height:44px}.gap-control>select{min-height:46px}
 }
+
+/* клеммы приборов */
+.terminal-dot{pointer-events:none}
+.terminal.pending .terminal-dot{stroke:#38bdf8;stroke-width:3}
+.terminal-hit{cursor:pointer}
+body.tool-cable #stage{cursor:crosshair}
+/* кабели по клеммам */
+.cable{pointer-events:none;opacity:.95}
+.cable.sel{stroke-dasharray:36 18;filter:drop-shadow(0 0 2px rgba(56,189,248,.9))}
+.cable-hit{pointer-events:stroke;cursor:pointer}
+.terminal-list{display:grid;gap:4px;margin-bottom:8px}
+.terminal-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#c7d5e6}
+.terminal-row b{min-width:52px;color:#f1f5fb}
+.terminal-row .muted{color:#7f95b2;font-size:11.5px}
+.terminal-kind-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.5)}

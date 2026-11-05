@@ -7,7 +7,7 @@
  * Инструменты: выбор (перетаскивание, рамка), короб (ломаная),
  * панорама, измерение. Опуски к каналам считаются автоматически.
  */
-import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS } from './catalog.js';
+import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS, terminalsForModel, TERMINAL_KIND_COLORS, TERMINAL_KIND_LABELS, CABLE_BY_ID } from './catalog.js';
 import { clamp, snapTo, fmt, fmt0, m, mm, esc, pathD, closestOnPolyline, closestOnSegment, orthoPath, uid } from './util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -26,6 +26,7 @@ export class WallEditor {
     this.pan = null;
     this.channelDraft = null;
     this.dimDraft = null;
+    this.cableDraft = null;
     this.hover = null;
     this.pointers = new Map();
     this.pinch = null;
@@ -336,6 +337,8 @@ export class WallEditor {
   cancelDraft() {
     this.channelDraft = null;
     this.dimDraft = null;
+    this.cableDraft = null;
+    this.cableDraft = null;
     if (!['select', 'pan'].includes(this.store.tool)) this.store.tool = 'select';
     this.store.armedModelId = null;
     this.store.emit('tool');
@@ -404,6 +407,20 @@ export class WallEditor {
       this._channelClick(floor);
       return;
     }
+    if (this.tool === 'cable') {
+      if (info && info.type === 'terminal') {
+        this._pickTerminal(info);
+        return;
+      }
+      if (info && info.type === 'device') {
+        this.store.select([{ type: 'device', id: info.id }]);
+        this.render();
+        return;
+      }
+      this.cableDraft = null;
+      this.render();
+      return;
+    }
     // --- выбор ---
     if (info) {
       const touch = e.pointerType !== 'mouse';
@@ -427,6 +444,11 @@ export class WallEditor {
       }
       if (info.type === 'dimension') {
         this.store.select([{ type: 'dimension', id: info.id }], additive);
+        this.render();
+        return;
+      }
+      if (info.type === 'cable') {
+        this.store.select([{ type: 'connection', id: info.id }], additive);
         this.render();
         return;
       }
@@ -868,11 +890,13 @@ export class WallEditor {
     this.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     this.svg.classList.toggle('tool-pan', this.tool === 'pan');
     this.svg.classList.toggle('armed', this.tool === 'place');
+    document.body.classList.toggle('tool-cable', this.tool === 'cable');
 
     const parts = [];
     parts.push(this._defs());
     parts.push(`<g id="sheet">${this._sheet()}${this._grid()}</g>`);
     parts.push(`<g id="channels">${this._channels()}</g>`);
+    parts.push(`<g id="cables">${this._cables()}</g>`);
     parts.push(`<g id="dimensions">${this._dimensions()}</g>`);
     parts.push(`<g id="devices">${this._devices()}</g>`);
     parts.push(`<g id="overlay">${this._overlay()}</g>`);
@@ -1025,6 +1049,149 @@ export class WallEditor {
     return points[points.length - 1];
   }
 
+  /* ================= клеммы и кабели ================= */
+  _terminalPoint(d, index, total) {
+    const model = getModel(d.modelId);
+    const x = d.x + (model.w * (index + 1)) / (total + 1);
+    const y = d.y + Math.min(30, Math.max(8, model.h * 0.2));
+    return [x, y];
+  }
+
+  _terminalsMarkup(d) {
+    const model = getModel(d.modelId);
+    const terms = terminalsForModel(model);
+    const ppm = this.pxPerMm || 0.2;
+    const r = Math.max(10, Math.min(model.w * 0.055, 8 / ppm));
+    const y = model.h - Math.min(30, Math.max(8, model.h * 0.2));
+    return terms.map((t, i) => {
+      const x = (model.w * (i + 1)) / (terms.length + 1);
+      const pending = this.cableDraft && this.cableDraft.deviceId === d.id && this.cableDraft.index === i;
+      return `<g class="terminal${pending ? ' pending' : ''}">
+        <circle class="terminal-dot" cx="${x}" cy="${y}" r="${r}" fill="${TERMINAL_KIND_COLORS[t.kind] || '#38bdf8'}" stroke="#0b1220" stroke-width="${Math.max(2, 1 / ppm)}" vector-effect="non-scaling-stroke"><title>${esc(t.label)} · ${esc(TERMINAL_KIND_LABELS[t.kind] || '')}</title></circle>
+        <circle class="terminal-hit" data-type="terminal" data-id="${d.id}" data-index="${i}" cx="${x}" cy="${y}" r="${Math.max(r * 1.8, 22 / ppm)}" fill="transparent"/>
+      </g>`;
+    }).join('');
+  }
+
+  /** Маршрут кабеля: от клеммы A до клеммы B по коробу (или Г-образно вне короба). */
+  routeConnection(conn) {
+    const store = this.store;
+    const a = store.getDevice(conn.from?.deviceId);
+    const b = store.getDevice(conn.to?.deviceId);
+    if (!a || !b || a.wallId !== this.wall.id || b.wallId !== this.wall.id) return null;
+    const modelA = getModel(a.modelId);
+    const modelB = getModel(b.modelId);
+    const termsA = terminalsForModel(modelA);
+    const termsB = terminalsForModel(modelB);
+    const ia = termsA.findIndex((t) => t.id === conn.from.terminalId);
+    const ib = termsB.findIndex((t) => t.id === conn.to.terminalId);
+    if (ia < 0 || ib < 0) return null;
+    const ta = termsA[ia];
+    const tb = termsB[ib];
+    if (ta.kind === 'power220' || tb.kind === 'power220') return { points: null, length: 0, inChannel: false, power220: true };
+    const pa = this._terminalPoint(a, ia, termsA.length);
+    const pb = this._terminalPoint(b, ib, termsB.length);
+    let best = null;
+    for (const ch of store.wallChannels) {
+      const ca = closestOnPolyline(pa, ch.points);
+      const cb = closestOnPolyline(pb, ch.points);
+      if (!ca || !cb) continue;
+      const along = this._channelRoute(ch.points, ca, cb);
+      const pts = this._dedupe([pa, ...(this._dist(pa, ca.point) > 2 ? [ca.point] : []), ...along, ...(this._dist(pb, cb.point) > 2 ? [cb.point] : []), pb]);
+      const len = this._polyLen(pts);
+      const cost = this._dist(pa, ca.point) + this._polyLen(along) + this._dist(pb, cb.point);
+      if (!best || cost < best.cost) best = { points: pts, length: len, inChannel: true, cost };
+    }
+    if (!best) {
+      const pts = this._dedupe(orthoPath(pa, pb));
+      return { points: pts, length: this._polyLen(pts), inChannel: false, power220: false };
+    }
+    return best;
+  }
+
+  _channelRoute(points, ca, cb) {
+    if (ca.index === cb.index) return [ca.point, cb.point];
+    const seq = [ca.point];
+    if (ca.index < cb.index) {
+      for (let k = ca.index + 1; k <= cb.index; k++) seq.push(points[k]);
+    } else {
+      for (let k = ca.index; k >= cb.index + 1; k--) seq.push(points[k]);
+    }
+    seq.push(cb.point);
+    return seq;
+  }
+
+  _dedupe(pts) {
+    const out = [];
+    for (const p of pts) {
+      const last = out[out.length - 1];
+      if (!last || this._dist(last, p) > 0.5) out.push(p);
+    }
+    return out;
+  }
+
+  _dist(a, b) {
+    return Math.hypot(a[0] - b[0], a[1] - b[1]);
+  }
+
+  _polyLen(pts) {
+    let len = 0;
+    for (let i = 1; i < pts.length; i++) len += this._dist(pts[i - 1], pts[i]);
+    return len;
+  }
+
+  _cables() {
+    const ppm = this.pxPerMm || 0.2;
+    let out = '';
+    for (const conn of this.store.wallConnections) {
+      const route = this.routeConnection(conn);
+      if (!route || route.power220 || !route.points || route.points.length < 2) continue;
+      const cable = CABLE_BY_ID.get(conn.cableModelId);
+      const color = cable?.color || '#38bdf8';
+      const sel = this.store.isSelected('connection', conn.id);
+      const d = pathD(route.points, (y) => this.toScreenY(y));
+      out += `<path class="cable${sel ? ' sel' : ''}" d="${d}" fill="none" stroke="${color}" stroke-width="${Math.max(8, 2.4 / ppm)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+      out += `<path class="cable-hit" data-type="cable" data-id="${conn.id}" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(120, 15 / ppm)}"/>`;
+    }
+    return out;
+  }
+
+  _pickTerminal(info) {
+    const d = this.store.getDevice(info.id);
+    if (!d) return;
+    const terms = terminalsForModel(getModel(d.modelId));
+    const term = terms[+info.index];
+    if (!term) return;
+    if (!this.cableDraft) {
+      this.cableDraft = { deviceId: d.id, index: +info.index };
+      this.store.select([{ type: 'device', id: d.id }]);
+      this.store.emit('toast', { text: `Клемма ${term.label}: выберите клемму второго прибора` });
+      this.store.emit('tool');
+      this.render();
+      return;
+    }
+    const firstDev = this.store.getDevice(this.cableDraft.deviceId);
+    const firstTerm = firstDev ? terminalsForModel(getModel(firstDev.modelId))[this.cableDraft.index] : null;
+    if (!firstDev || !firstTerm) {
+      this.cableDraft = null;
+      this.render();
+      return;
+    }
+    if (firstDev.id === d.id && firstTerm.id === term.id) {
+      this.cableDraft = null;
+      this.render();
+      return;
+    }
+    const conn = this.store.addConnection(
+      { deviceId: firstDev.id, terminalId: firstTerm.id },
+      { deviceId: d.id, terminalId: term.id },
+    );
+    this.cableDraft = null;
+    if (conn) this.store.emit('toast', { text: conn.cableModelId ? 'Связь добавлена: кабель проложен в коробе' : 'Связь 220 В добавлена, кабель не рисуется' });
+    else this.store.emit('toast', { text: 'Не удалось связать эти клеммы', error: true });
+    this.render();
+  }
+
   _devices() {
     const wallH = this.wall.height;
     const ppm = this.pxPerMm || 0.2;
@@ -1050,6 +1217,7 @@ export class WallEditor {
           <rect class="sel-frame" x="${-padX - 6}" y="${-padY - 6}" width="${model.w + padX * 2 + 12}" height="${model.h + padY * 2 + 12}" rx="12" vector-effect="non-scaling-stroke"/>
         </g>
         <rect class="issue-frame" x="${-padX - 10}" y="${-padY - 10}" width="${model.w + padX * 2 + 20}" height="${model.h + padY * 2 + 20}" rx="14" vector-effect="non-scaling-stroke"/>
+        ${this.tool === 'cable' || this.store.isSelected('device', d.id) ? this._terminalsMarkup(d) : ''}
         ${showTag ? `<text class="dev-tag" x="${model.w / 2}" y="${model.h + 90}">${esc(label)}</text>` : ''}
         ${showSub ? `<text class="dev-sub" x="${model.w / 2}" y="${model.h + 152}">${esc(d.address || model.model)}</text>` : ''}
       </g>`;
@@ -1160,7 +1328,15 @@ export class WallEditor {
     const modelName = this.store.armedModelId ? getModel(this.store.armedModelId).name : '';
     let text;
 
-    if (tool === 'channel') {
+    if (tool === 'cable') {
+      text = this.cableDraft
+        ? (coarse
+          ? 'Связь: выбрана первая клемма — тапните клемму второго прибора. <button class="hint-btn" id="btn-cable-done">Отмена</button>'
+          : 'Связь: выбрана первая клемма — кликните клемму второго прибора. <kbd>Esc</kbd> — отмена')
+        : (coarse
+          ? 'Связь: тапните клемму прибора-источника, затем клемму приёмника.'
+          : 'Связь: кликните клемму прибора, затем клемму второго. Кабель рисуется по коробу; 220 В — без кабеля.');
+    } else if (tool === 'channel') {
       if (this.channelDraft) {
         const n = this.channelDraft.points.length;
         text = coarse

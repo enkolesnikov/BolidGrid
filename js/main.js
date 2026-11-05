@@ -5,7 +5,7 @@ import { Store } from './store.js';
 import { WallEditor } from './wall.js';
 import { Panels } from './panels.js';
 import { buildDemoProject } from './demo.js';
-import { getModel, CHANNEL_KINDS, CHANNEL_COLORS } from './catalog.js';
+import { getModel, terminalsForModel, CHANNEL_KINDS, CHANNEL_COLORS } from './catalog.js';
 import { download, esc } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -93,6 +93,7 @@ store.on((type) => {
     syncWallSizeUI();
   } else if (type === 'tool') {
     document.body.classList.toggle('tool-channel', store.tool === 'channel');
+    document.body.classList.toggle('tool-cable', store.tool === 'cable');
     updateSelectionDock();
     panels.updateToolButtons();
     editor._hint();
@@ -518,6 +519,11 @@ document.addEventListener('click', (e) => {
     editor.cancelDraft();
     panels.toast('Размещение завершено');
   }
+  if (e.target.closest?.('#btn-cable-done')) {
+    editor.cableDraft = null;
+    editor.render();
+    panels.toast('Связь отменена');
+  }
 });
 
 /* ================== клавиатура ================== */
@@ -566,6 +572,8 @@ window.addEventListener('keydown', (e) => {
     editor.cancelDraft();
     store.tool = 'select';
     store.emit('tool');
+  } else if (e.key === 'l' || e.key === 'L' || e.key === 'д' || e.key === 'Д') {
+    editor.setTool('cable');
   } else if (e.key === 'c' || e.key === 'C' || e.key === 'с' || e.key === 'С') {
     editor.setTool('channel');
   } else if (e.key === 'm' || e.key === 'M' || e.key === 'ь' || e.key === 'Ь') {
@@ -616,6 +624,7 @@ window.addEventListener('afterprint', () => {
   updateSelectionDock();
   updatePlacementStatus();
   document.body.classList.toggle('tool-channel', store.tool === 'channel');
+    document.body.classList.toggle('tool-cable', store.tool === 'cable');
   editor._hint();
   requestAnimationFrame(() => {
     editor.fit();
@@ -636,6 +645,7 @@ window.BolidGrid = {
   editor,
   panels,
   getModel,
+  terminalsForModel,
   loadDemo,
   /** Загрузка проекта из текста JSON (используется Android-оболочкой при «Открыть/Поделиться»). */
   importProjectText: (text) => {

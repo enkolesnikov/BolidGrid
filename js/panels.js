@@ -2,7 +2,7 @@
  * panels.js — панели интерфейса: каталог устройств, стены, точные свойства,
  * спецификация оборудования и ведомость коробов.
  */
-import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb } from './catalog.js';
+import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
 
 const el = (html) => {
@@ -275,10 +275,12 @@ export class Panels {
     const devices = this.store.selectedDevices();
     const channels = this.store.selectedChannels();
     const dims = this.store.selectedDimensions();
-    if (devices.length === 1 && !channels.length && !dims.length) box.innerHTML = this._deviceInspector(devices[0]);
-    else if (channels.length === 1 && !devices.length && !dims.length) box.innerHTML = this._channelInspector(channels[0]);
-    else if (dims.length === 1 && !devices.length && !channels.length) box.innerHTML = this._dimensionInspector(dims[0]);
-    else box.innerHTML = this._multiInspector(devices, channels, dims);
+    const conns = this.store.selectedConnections();
+    if (devices.length === 1 && !channels.length && !dims.length && !conns.length) box.innerHTML = this._deviceInspector(devices[0]);
+    else if (channels.length === 1 && !devices.length && !dims.length && !conns.length) box.innerHTML = this._channelInspector(channels[0]);
+    else if (dims.length === 1 && !devices.length && !channels.length && !conns.length) box.innerHTML = this._dimensionInspector(dims[0]);
+    else if (conns.length === 1 && !devices.length && !channels.length && !dims.length) box.innerHTML = this._connectionInspector(conns[0]);
+    else box.innerHTML = this._multiInspector(devices, channels, dims, conns);
     this._wireInspector(box);
   }
 
@@ -335,6 +337,12 @@ export class Panels {
           <div class="measure-preview"><span>Габарит</span><b>${model.w} × ${model.h} мм</b></div>
         </section>
         <section class="prop-section">
+          <h5>Клеммы и связи</h5>
+          <div class="terminal-list">${terminalsForModel(model).map((t) => `<div class="terminal-row"><span class="terminal-kind-dot" style="background:${TERMINAL_KIND_COLORS[t.kind] || '#38bdf8'}"></span><b>${escAll(t.label)}</b><span class="muted">${escAll(TERMINAL_KIND_LABELS[t.kind] || '')}</span></div>`).join('')}</div>
+          <div class="section-actions"><button class="btn tiny" data-act="start-cable">Связать клеммы на листе</button></div>
+          <div class="hintline">Связь рисуется кабелем по коробу; для клемм 220 В кабель не рисуется.</div>
+        </section>
+        <section class="prop-section">
           <h5>Высота низа от пола</h5>
           <div class="quick-values">${[900, 1200, 1500, 1800].map((v) => `<button class="btn tiny ${d.y === v ? 'active' : ''}" data-height="${v}">${fmt0(v)}</button>`).join('')}</div>
         </section>
@@ -358,6 +366,25 @@ export class Panels {
       <button class="btn tiny" data-align="left" title="По левому краю">Слева</button><button class="btn tiny" data-align="center-x" title="По центрам по вертикали">Центр X</button><button class="btn tiny" data-align="right" title="По правому краю">Справа</button>
       <button class="btn tiny" data-align="top" title="По верхнему краю">Сверху</button><button class="btn tiny" data-align="center-y" title="По центрам по горизонтали">Центр Y</button><button class="btn tiny" data-align="bottom" title="По нижнему краю">Снизу</button>
     </div>${n >= 3 ? `<div class="section-actions"><button class="btn tiny" data-align="distribute-x">Равномерно по X</button><button class="btn tiny" data-align="distribute-y">Равномерно по Y</button></div>` : ''}`;
+  }
+
+  _connectionInspector(conn) {
+    const st = this.store;
+    const a = st.getDevice(conn.from?.deviceId);
+    const b = st.getDevice(conn.to?.deviceId);
+    if (!a || !b) return '<div class="selection-empty">Связь не найдена</div>';
+    const ta = findTerminal(a, conn.from.terminalId);
+    const tb = findTerminal(b, conn.to.terminalId);
+    const route = this.editor.routeConnection(conn);
+    const cable = CABLE_BY_ID.get(conn.cableModelId);
+    const power220 = !!route?.power220;
+    return `<div class="prop-title"><span class="badge">связь</span><h4>${escAll(a.tag || 'прибор')} · ${escAll(ta?.label || '?')} → ${escAll(b.tag || 'прибор')} · ${escAll(tb?.label || '?')}</h4></div>
+      <div class="form">
+        <div class="measure-preview"><span>Длина кабеля</span><b>${power220 ? '220 В — без кабеля' : route?.points ? m(route.length) : '—'}</b></div>
+        ${power220 ? '<div class="hintline">Клеммы 220 В: соединение учитывается, но кабель в коробе не рисуется.</div>' : `<label>Кабель<select data-conn-cable>${CABLE_MODELS.map((c) => `<option value="${c.id}" ${c.id === conn.cableModelId ? 'selected' : ''}>${escAll(c.label)}</option>`).join('')}</select></label>`}
+        <div class="hintline">${route?.inChannel ? 'Кабель проложен по ближайшему коробу.' : (power220 ? '' : 'Короб не найден — кабель показан Г-образно. Проведите короб, чтобы уложить кабель в него.')}</div>
+        <div class="section-actions"><button class="btn tiny danger" data-act="del">Удалить связь</button></div>
+      </div>`;
   }
 
   _channelInspector(c) {
@@ -409,13 +436,13 @@ export class Panels {
       </div>`;
   }
 
-  _multiInspector(devices, channels, dims = []) {
-    const total = devices.length + channels.length + dims.length;
+  _multiInspector(devices, channels, dims = [], conns = []) {
+    const total = devices.length + channels.length + dims.length + conns.length;
     return `<div class="prop-title"><h4>Выбрано: ${total}</h4><span class="badge">${devices.length} приборов</span></div>
       <div class="form">
         ${devices.length ? `<section class="prop-section"><h5>Выравнивание приборов</h5>${this._alignmentButtons()}</section>` : ''}
         ${devices.length >= 2 ? `<section class="prop-section"><h5>Свободный зазор между приборами</h5><div class="gap-control"><div class="position-input"><input data-gap-value type="number" min="0" step="1" inputmode="numeric" value="100" aria-label="Зазор в миллиметрах"><i>мм</i></div><select data-gap-direction aria-label="Направление зазора"><option value="x">по горизонтали</option><option value="y">по вертикали</option></select><button class="btn" data-act="apply-gap">Применить</button></div><div class="hintline">Первый прибор остаётся на месте, остальные выстраиваются с одинаковым зазором.</div></section>` : ''}
-        <div class="multi-summary">${channels.length ? `Коробов: ${channels.length}. ` : ''}${dims.length ? `Размеров: ${dims.length}.` : ''}На телефоне удерживайте прибор, чтобы добавить его в выделение.</div>
+        <div class="multi-summary">${channels.length ? `Коробов: ${channels.length}. ` : ''}${dims.length ? `Размеров: ${dims.length}. ` : ''}${conns.length ? `Связей: ${conns.length}. ` : ''}На телефоне удерживайте прибор, чтобы добавить его в выделение.</div>
         <div class="section-actions">${devices.length ? '<button class="btn tiny" data-act="dup">Дублировать приборы</button>' : ''}<button class="btn tiny danger" data-act="del">Удалить выбранное</button></div>
       </div>`;
   }
@@ -427,7 +454,19 @@ export class Panels {
     const channel = st.selectedChannels().length === 1 ? st.selectedChannels()[0] : null;
     const dim = st.selectedDimensions().length === 1 ? st.selectedDimensions()[0] : null;
 
-    if (single && !channel && !dim) {
+    const conn = st.selectedConnections().length === 1 ? st.selectedConnections()[0] : null;
+    if (conn) {
+      box.querySelector('[data-conn-cable]')?.addEventListener('change', (e) => st.updateConnection(conn.id, { cableModelId: e.target.value }));
+    }
+    if (single && !channel && !dim && !conn) {
+      box.querySelector('[data-act="start-cable"]')?.addEventListener('click', () => {
+        st.tool = 'cable';
+        st.emit('tool');
+        this.editor.cableDraft = null;
+        this.editor.render();
+        this.editor._hint();
+        this.toast('Тапните клемму на приборе, затем клемму второго прибора');
+      });
       box.querySelectorAll('[data-f]').forEach((inp) => inp.addEventListener('change', () => {
         st.updateDevice(single.id, { [inp.dataset.f]: inp.type === 'number' ? parseFloat(inp.value) || 0 : inp.value });
       }));
@@ -576,6 +615,17 @@ export class Panels {
       }
     }
 
+    const cableTotals = new Map();
+    let noCable220 = 0;
+    for (const conn of this.store.project.connections || []) {
+      const route = this.editor.routeConnection(conn);
+      if (!route) continue;
+      if (route.power220) { noCable220++; continue; }
+      if (!conn.cableModelId || !route.points) continue;
+      cableTotals.set(conn.cableModelId, (cableTotals.get(conn.cableModelId) || 0) + route.length);
+    }
+    const cableRows = [...cableTotals.entries()].map(([id, lengthMm], i) => ({ pos: i + 1, name: CABLE_BY_ID.get(id)?.label || id, lengthMm }));
+
     const materialRows = (spec?.materials || []).map((row) => ({
       pos: row.pos, name: row.name, model: row.model, vendor: row.vendor, unit: row.unit || 'шт.', plan: +row.qty || 0, fact: null, section: row.group || 'Изделия и материалы',
     }));
@@ -611,18 +661,22 @@ export class Panels {
       ${table(rows)}
       ${materialRows.length ? `<div class="pal-group-title">Изделия и материалы</div>${table(materialRows, { showFact: false })}` : ''}
       ${spareRows.length ? `<div class="pal-group-title">Запасные изделия</div>${table(spareRows)}` : ''}
+      ${cableRows.length ? `<div class="pal-group-title">Кабельная продукция (по проложенным связям)</div>
+        <table class="table"><thead><tr><th>№</th><th>Кабель</th><th class="num">Длина, м</th></tr></thead>
+        <tbody>${cableRows.map((r) => `<tr><td class="num">${r.pos}</td><td>${escAll(r.name)}</td><td class="num"><b>${(r.lengthMm / 1000).toFixed(2)}</b></td></tr>`).join('')}</tbody></table>` : ''}
+      ${noCable220 ? `<div class="hintline">Связей 220 В без кабеля: ${noCable220} — они учтены в схеме, но кабель не рисуется.</div>` : ''}
       <div class="section-actions">
         <button class="btn tiny" data-spec-act="csv">Экспорт CSV</button>
         <button class="btn tiny" data-spec-act="md">Экспорт Markdown</button>
         <button class="btn tiny" data-spec-act="print">Печать</button>
       </div>`;
     box.querySelectorAll('[data-spec-act]').forEach((b) =>
-      b.addEventListener('click', () => this._specExport(b.dataset.specAct, { rows, materialRows, spareRows, equipmentCount }))
+      b.addEventListener('click', () => this._specExport(b.dataset.specAct, { rows, materialRows, spareRows, equipmentCount, cableRows }))
     );
   }
 
   _specExport(act, data) {
-    const { rows, materialRows, spareRows } = data;
+    const { rows, materialRows, spareRows, cableRows = [] } = data;
     const name = (this.store.project.meta.name || 'project').replace(/[^\wа-яА-ЯёЁ.-]+/g, '_');
     const header = ['Поз.', 'Наименование', 'Тип, марка', 'Завод', 'Ед.', 'По спецификации', 'Факт', 'Расхождение'];
     const toRow = (r) => [r.pos ?? '', r.name ?? '', r.model ?? '', r.vendor ?? '', r.unit ?? '', r.plan ?? '', r.fact ?? '', r.plan != null && r.fact != null ? r.fact - r.plan : ''];
@@ -636,11 +690,12 @@ export class Panels {
       ];
       if (materialRows.length) lines.push([], ['Изделия и материалы'], header, ...materialRows.map(toRow));
       if (spareRows.length) lines.push([], ['Запасные изделия и принадлежности'], header, ...spareRows.map(toRow));
+      if (cableRows.length) lines.push([], ['Кабельная продукция'], ['№', 'Кабель', 'Длина, м'], ...cableRows.map((r) => [r.pos, r.name, (r.lengthMm / 1000).toFixed(2)]));
       download(`${name}_спецификация.csv`, toCSV(lines), 'text/csv');
       this.toast('Спецификация выгружена в CSV');
     } else if (act === 'md') {
       const tbl = (list) => ['| Поз. | Наименование | Тип, марка | Завод | Ед. | По спец. | Факт |', '|---:|---|---|---|---:|---:|---:|', ...list.map((r) => `| ${r.pos ?? ''} | ${r.name ?? ''} | ${r.model ?? ''} | ${r.vendor ?? ''} | ${r.unit ?? ''} | ${r.plan ?? ''} | ${r.fact ?? ''} |`)].join('\n');
-      const md = [`# Спецификация — ${this.store.project.meta.name || ''}`, '', this.store.project.meta.address || '', '', '## Оборудование', tbl(rows), materialRows.length ? `\n## Изделия и материалы\n${tbl(materialRows)}` : '', spareRows.length ? `\n## Запасные изделия\n${tbl(spareRows)}` : ''].join('\n');
+      const md = [`# Спецификация — ${this.store.project.meta.name || ''}`, '', this.store.project.meta.address || '', '', '## Оборудование', tbl(rows), materialRows.length ? `\n## Изделия и материалы\n${tbl(materialRows)}` : '', spareRows.length ? `\n## Запасные изделия\n${tbl(spareRows)}` : '', cableRows.length ? `\n## Кабельная продукция\n| № | Кабель | Длина, м |\n|---:|---|---:|\n${cableRows.map((r) => `| ${r.pos} | ${r.name} | ${(r.lengthMm / 1000).toFixed(2)} |`).join('\n')}` : ''].join('\n');
       download(`${name}_спецификация.md`, md, 'text/markdown');
       this.toast('Спецификация выгружена в Markdown');
     } else if (act === 'print') {

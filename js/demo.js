@@ -71,6 +71,12 @@ export function buildDemoProject() {
     },
   ];
 
+  /* ---------- связи по клеммам (кабели в коробе) ---------- */
+  const connections = [
+    { id: uid('conn'), wallId: wallA.id, from: { deviceId: sirius.id, terminalId: 't6' }, to: { deviceId: sp2_1.id, terminalId: 't1' }, cableModelId: 'kps-2x075' },
+    { id: uid('conn'), wallId: wallA.id, from: { deviceId: sirius.id, terminalId: 't4' }, to: { deviceId: sp2_2.id, terminalId: 't3' }, cableModelId: 'pvs-2x15' },
+  ];
+
   /* ---------- размерные линии ---------- */
   const dimensions = [
     // ширина стены 1
@@ -94,6 +100,7 @@ export function buildDemoProject() {
     devices,
     channels,
     dimensions,
+    connections,
   };
 
   return { project, activeWallId: wallA.id };

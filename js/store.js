@@ -4,7 +4,7 @@
  * Проект целиком сериализуется в JSON: undo — это снимки проекта,
  * поэтому любые правки должны идти через begin()/commit() или act().
  */
-import { getModel, MODELS, CHANNEL_KINDS, CHANNEL_KIND_IDS } from './catalog.js';
+import { getModel, MODELS, CHANNEL_KINDS, CHANNEL_KIND_IDS, terminalsForModel, CABLE_BY_ID, defaultCableForTerminals } from './catalog.js';
 import { uid, closestOnPolyline, polylineLength, clamp } from './util.js';
 
 const MODELS_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
@@ -29,6 +29,7 @@ export function createProject(meta = {}) {
     devices: [],
     channels: [],
     dimensions: [],
+    connections: [],
   };
 }
 
@@ -191,6 +192,7 @@ export class Store {
       this.project.devices = this.project.devices.filter((d) => d.wallId !== id);
       this.project.channels = this.project.channels.filter((c) => c.wallId !== id);
       this.project.dimensions = (this.project.dimensions || []).filter((d) => d.wallId !== id);
+      this.project.connections = (this.project.connections || []).filter((c) => c.wallId !== id);
       this.ensureActiveWall();
       this.clearSelection();
     });
@@ -249,6 +251,19 @@ export class Store {
       .filter((s) => s.type === 'dimension')
       .map((s) => this.project.dimensions.find((d) => d.id === s.id))
       .filter(Boolean);
+  }
+  selectedConnections() {
+    return this.selection
+      .filter((s) => s.type === 'connection')
+      .map((s) => this.getConnection(s.id))
+      .filter(Boolean);
+  }
+  getConnection(id) {
+    return (this.project.connections || []).find((c) => c.id === id);
+  }
+  get wallConnections() {
+    const id = this.wall?.id;
+    return (this.project.connections || []).filter((c) => c.wallId === id);
   }
 
   /* ---------- устройства ---------- */
@@ -502,9 +517,13 @@ export class Store {
       const devIds = new Set(this.selection.filter((s) => s.type === 'device').map((s) => s.id));
       const chIds = new Set(this.selection.filter((s) => s.type === 'channel').map((s) => s.id));
       const dimIds = new Set(this.selection.filter((s) => s.type === 'dimension').map((s) => s.id));
+      const connIds = new Set(this.selection.filter((s) => s.type === 'connection').map((s) => s.id));
       this.project.devices = this.project.devices.filter((d) => !devIds.has(d.id));
       this.project.channels = this.project.channels.filter((c) => !chIds.has(c.id));
       this.project.dimensions = (this.project.dimensions || []).filter((d) => !dimIds.has(d.id));
+      this.project.connections = (this.project.connections || []).filter(
+        (c) => !connIds.has(c.id) && !devIds.has(c.from?.deviceId) && !devIds.has(c.to?.deviceId),
+      );
       this.clearSelection();
     });
     return removed;
@@ -540,6 +559,59 @@ export class Store {
       doIt();
       this.touch();
     }
+  }
+
+  /* ---------- соединения приборов (клеммы + кабели) ---------- */
+  addConnection(from, to, cableModelId = null) {
+    const a = this.getDevice(from?.deviceId);
+    const b = this.getDevice(to?.deviceId);
+    if (!a || !b) return null;
+    if (a.id === b.id) return null;
+    if (a.wallId !== b.wallId) return null;
+    const ta = terminalsForModel(getModel(a.modelId)).find((t) => t.id === from.terminalId);
+    const tb = terminalsForModel(getModel(b.modelId)).find((t) => t.id === to.terminalId);
+    if (!ta || !tb) return null;
+    const exists = (this.project.connections || []).some(
+      (c) => (c.from.deviceId === a.id && c.from.terminalId === ta.id && c.to.deviceId === b.id && c.to.terminalId === tb.id)
+        || (c.from.deviceId === b.id && c.from.terminalId === tb.id && c.to.deviceId === a.id && c.to.terminalId === ta.id),
+    );
+    if (exists) return null;
+    const cable = cableModelId ?? defaultCableForTerminals(ta, tb);
+    const conn = {
+      id: uid('conn'),
+      wallId: a.wallId,
+      from: { deviceId: a.id, terminalId: ta.id },
+      to: { deviceId: b.id, terminalId: tb.id },
+      cableModelId: cable && CABLE_BY_ID.has(cable) ? cable : '',
+    };
+    this.act('соединение приборов', () => {
+      if (!Array.isArray(this.project.connections)) this.project.connections = [];
+      this.project.connections.push(conn);
+      this.selection = [{ type: 'connection', id: conn.id }];
+    });
+    this.emit('selection');
+    return conn;
+  }
+  updateConnection(id, patch, { commit = true } = {}) {
+    const doIt = () => {
+      const c = this.getConnection(id);
+      if (!c) return;
+      if (patch.cableModelId !== undefined) {
+        c.cableModelId = CABLE_BY_ID.has(patch.cableModelId) ? patch.cableModelId : '';
+      }
+    };
+    if (commit) this.act('изменение кабеля', doIt);
+    else {
+      doIt();
+      this.touch();
+    }
+  }
+  removeConnection(id) {
+    this.act('удаление кабеля', () => {
+      this.project.connections = (this.project.connections || []).filter((c) => c.id !== id);
+      this.clearSelection();
+    });
+    return true;
   }
 
   /* ---------- размерные линии ---------- */
@@ -742,6 +814,32 @@ export function sanitizeProject(raw) {
         offset: clamp(+d.offset || 60, -600, 600),
       };
     });
+  // Связи по клеммам: переносим только валидные (оба прибора существуют, клеммы есть у моделей,
+  // приборы на одной стене, кабель из каталога).
+  const devById = new Map(devices.map((d) => [d.id, d]));
+  const terminalsOf = (dev) => {
+    const list = terminalsForModel(getModel(dev.modelId));
+    return new Map(list.map((t) => [t.id, t]));
+  };
+  const connections = (Array.isArray(raw.connections) ? raw.connections : [])
+    .map((c) => {
+      const from = c && c.from && devById.get(String(c.from.deviceId));
+      const to = c && c.to && devById.get(String(c.to.deviceId));
+      if (!from || !to || from.id === to.id || from.wallId !== to.wallId) return null;
+      const fromTerminals = terminalsOf(from);
+      const toTerminals = terminalsOf(to);
+      if (!fromTerminals.has(String(c.from.terminalId)) || !toTerminals.has(String(c.to.terminalId))) return null;
+      const cable = CABLE_BY_ID.has(String(c.cableModelId || '')) ? String(c.cableModelId) : '';
+      return {
+        id: String(c.id || uid('conn')),
+        wallId: from.wallId,
+        from: { deviceId: from.id, terminalId: String(c.from.terminalId) },
+        to: { deviceId: to.id, terminalId: String(c.to.terminalId) },
+        cableModelId: cable,
+      };
+    })
+    .filter(Boolean);
+
   return {
     version: SCHEMA_VERSION,
     meta: { ...base.meta, ...(raw.meta && typeof raw.meta === 'object' ? raw.meta : {}) },
@@ -749,5 +847,6 @@ export function sanitizeProject(raw) {
     devices,
     channels,
     dimensions,
+    connections,
   };
 }

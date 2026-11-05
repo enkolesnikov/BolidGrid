@@ -1049,7 +1049,7 @@ async function main() {
     const specTables = await readSpecTables(page);
     const equipTable = specTables.find((t) => /Оборудование/.test(t.section) && t.rows.length >= 4);
     check('B: таблица оборудования содержит 4 доступные позиции', !!equipTable && equipTable.rows.length === 4, equipTable ? `rows=${equipTable.rows.length}` : 'no table');
-    check('B: кабельная продукция отсутствует в спецификации', !specTables.some((t) => /Кабельная продукция/i.test(t.section) || /КПСнг/.test(t.rows.map((r) => r.join(' ')).join(' '))), '');
+    check('B: кабельная продукция показана по связям клемм', specTables.some((t) => /Кабельная продукция/i.test(t.section) && /КПСнг/.test(t.rows.map((r) => r.join(' ')).join(' '))), '');
     const row4 = equipTable?.rows.find((r) => r[0] === '4');
     const plan4 = row4 ? parseRuNum(row4[5]) : null;
     const fact4 = row4 ? parseRuNum(row4[6]) : null;
@@ -1112,7 +1112,7 @@ async function main() {
     const csvPath = OUT + 'qa-spec.csv';
     await csvDownload.saveAs(csvPath);
     const csvText = await readFile(csvPath, 'utf8');
-    check('B: CSV спецификации содержит оборудование без кабельных разделов', /Сириус/.test(csvText) && !/КПСнг|Кабельная продукция/i.test(csvText), `bytes=${csvText.length}`);
+    check('B: CSV спецификации содержит оборудование и кабельную продукцию', /Сириус/.test(csvText) && /КПСнг/.test(csvText) && /Кабельная продукция/i.test(csvText), `bytes=${csvText.length}`);
 
     /* ---------- B11. Автосохранение и перезагрузка ---------- */
     section('B11. Автосохранение localStorage и восстановление после reload');

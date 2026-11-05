@@ -323,7 +323,7 @@ async function main() {
         rightVisible: document.getElementById('right').getBoundingClientRect().top < innerHeight * 0.7,
       }));
       check(`${vp.label}: шторка «Спец» показывает таблицы`, spec.tables >= 2 && /Сириус/.test(spec.text) && !/ДИП-34А-04/.test(spec.text), `tables=${spec.tables}`);
-      check(`${vp.label}: кабельных разделов и марок в спецификации нет`, !/КПСнг|Кабельная продукция/i.test(spec.text), '');
+      check(`${vp.label}: в спецификации есть кабельная продукция по связям`, /КПСнг/iu.test(spec.text) && /Кабельная продукция/iu.test(spec.text), '');
       await page.screenshot({ path: `${OUT}mobile-${vp.width}-spec.png` });
 
       await page.locator('#mobile-bar button[data-sheet="journal"]').tap();

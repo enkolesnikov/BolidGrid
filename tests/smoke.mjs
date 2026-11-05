@@ -507,7 +507,50 @@ async function main() {
     check('вкладка «Спецификация» отрисована', specTables >= 2, `tables=${specTables}`);
     check('в спецификации есть «Сириус» и С2000-СП2, убранных позиций нет', /Сириус/.test(specText) && /С2000-СП\s*2/.test(specText) && !/ДИП-34А-04/.test(specText) && !/Маяк-24-3М/.test(specText) && !/КМ-О/.test(specText), specText.replace(/\s+/g, ' ').slice(0, 120));
     check('в спецификации есть сопоставление факта и количества', /по\s*спец\./i.test(specText) && /факт/i.test(specText));
-    check('кабельные разделы и марки полностью убраны из спецификации', !/КПСнг|Кабельная продукция/i.test(specText), '');
+    check('в спецификации есть кабельная продукция по связям', /Кабельная продукция/i.test(specText) && /КПСнг/.test(specText), specText.replace(/\s+/g, ' ').slice(0, 120));
+
+    // --- клеммы и кабели по связям ---
+    const cableState = await page.evaluate(() => {
+      const S = window.BolidGrid;
+      const st = S.store;
+      const a = st.wallDevices.find((d) => d.modelId === 'sirius');
+      const b = st.wallDevices.find((d) => d.modelId === 'sp2');
+      const ta = S.terminalsForModel(S.getModel(a.modelId)).filter((t) => t.kind === 'rs485').pop();
+      const tb = S.terminalsForModel(S.getModel(b.modelId)).filter((t) => t.kind === 'rs485').pop();
+      const before = document.querySelectorAll('#cables .cable').length;
+      const conn = st.addConnection({ deviceId: a.id, terminalId: ta.id }, { deviceId: b.id, terminalId: tb.id });
+      const route = conn ? S.editor.routeConnection(conn) : null;
+      S.editor.render();
+      const mid = { cables: document.querySelectorAll('#cables .cable').length, length: route?.length || 0, inChannel: !!route?.inChannel, cable: conn?.cableModelId };
+      // 220 В: связь без кабеля
+      const socket = st.addDevice('socket', 400, 300);
+      const t1 = S.terminalsForModel(S.getModel(socket.modelId))[0];
+      const t220 = S.terminalsForModel(S.getModel(a.modelId)).find((t) => t.kind === 'power220');
+      const before220 = document.querySelectorAll('#cables .cable').length;
+      const conn220 = st.addConnection({ deviceId: socket.id, terminalId: t1.id }, { deviceId: a.id, terminalId: t220.id });
+      const route220 = conn220 ? S.editor.routeConnection(conn220) : null;
+      S.editor.render();
+      const after220 = document.querySelectorAll('#cables .cable').length;
+      st.removeConnection(conn220.id);
+      st.selectOne('device', socket.id);
+      st.removeSelection();
+      st.removeConnection(conn.id);
+      S.editor.render();
+      return { before, mid, before220, after220, power220: !!route220?.power220, afterCleanup: document.querySelectorAll('#cables .cable').length };
+    });
+    check('связь по клеммам рисует кабель в коробе с длиной', cableState.mid.cables === cableState.before + 1 && cableState.mid.length > 0 && cableState.mid.inChannel && !!cableState.mid.cable, JSON.stringify(cableState.mid));
+    check('связь 220 В учитывается, но кабель не рисуется', cableState.power220 && cableState.after220 === cableState.before220, JSON.stringify({ power220: cableState.power220, before: cableState.before220, after: cableState.after220 }));
+    check('удаление связи убирает кабель с листа', cableState.afterCleanup === cableState.before, JSON.stringify({ before: cableState.before, after: cableState.afterCleanup }));
+
+    const terminalsVisible = await page.evaluate(() => {
+      const S = window.BolidGrid;
+      const d = S.store.wallDevices.find((x) => x.modelId === 'sirius');
+      S.store.selectOne('device', d.id);
+      S.editor.render();
+      const expected = S.terminalsForModel(S.getModel(d.modelId)).length;
+      return { expected, dots: document.querySelectorAll('#devices .terminal-dot').length };
+    });
+    check('у выбранного прибора показаны его клеммы', terminalsVisible.dots === terminalsVisible.expected && terminalsVisible.expected > 0, JSON.stringify(terminalsVisible));
 
     // --- ведомость коробов ---
     await page.locator('#tabs button[data-tab="journal"]').click();

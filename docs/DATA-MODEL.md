@@ -55,6 +55,15 @@
         "text": "",
         "offset": -55
       }
+    ],
+    "connections": [
+      {
+        "id": "conn_x1",
+        "wallId": "wall_x1",
+        "from": { "deviceId": "dev_x1", "terminalId": "t6" },
+        "to": { "deviceId": "dev_x2", "terminalId": "t1" },
+        "cableModelId": "kps-2x075"
+      }
     ]
   }
 }
@@ -84,8 +93,12 @@
 | `channels[].color` | HEX-цвет; пустая строка означает цвет по типу |
 | `dimensions[].text` | Подпись; пустая строка включает автоматическую длину |
 | `dimensions[].offset` | Отступ размерной линии; допускаются отрицательные значения |
+| `connections[].from` / `.to` | Клеммы двух приборов: `deviceId` + `terminalId` |
+| `connections[].cableModelId` | Кабель из каталога (`CABLE_MODELS`); пустая строка — без кабеля (220 В) |
 
-Видимые идентификаторы моделей: `sirius`, `sp2`, `sp4_220`, `ar2`, `kdl`, `sp1`, `s2000m`, `rip12`, `bp12`, `switch`, `socket`, `custom`.
+Видимые идентификаторы моделей: `sirius`, `sp2`, `sp4_220`, `ar2`, `kdl`, `sp1`, `s2000m`, `rip12`, `bp12`, `switch`, `socket`, `custom`, `bki`, `ethernet`, `rip56`, `ar8`, `astra_rim`, `astra_824`, `kdl2i`, `pritok_kop`.
+
+Клеммы прибора задаются в каталоге (`terminalsForModel`, типы `power220`, `power12`, `rs485`, `signal`, `lan`); связь на клеммы 220 В сохраняется, но кабель для неё не рисуется. Маршрут кабеля вычисляется по коробу активной стены.
 
 Типы трасс: `dkc`, `короб-60`, `короб-40`, `лоток`, `гофра`, `труба`. Новые короба по умолчанию создаются как `dkc`.
 
