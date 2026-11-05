@@ -40,6 +40,16 @@ export const KIND_COLORS = {
   other: '#475569',
 };
 
+export const SYSTEM_LABELS = {
+  fire: 'Пожарные приборы',
+  security: 'Охранные приборы',
+  skud: 'СКУД',
+  power: 'Питание и инфраструктура',
+  other: 'Прочее',
+};
+
+export const SYSTEM_ORDER = ['fire', 'security', 'skud', 'power', 'other'];
+
 export const KIND_ORDER = [
   'ppkup', 'detektor_dym', 'detektor_ruchn', 'opoveshchatel_svet', 'opoveshchatel_zvuk',
   'blok_sp', 'blok_kpb', 'rasshiritel', 'modul', 'bp', 'korobka', 'other',
@@ -63,7 +73,7 @@ const terminals = (w, h, n, size = 14) => {
   let out = '';
   for (let i = 0; i < n; i++) {
     const x = (w / (n + 1)) * (i + 1);
-    out += `<rect x="${x - size / 2}" y="${h - size - 4}" width="${size}" height="${size}" rx="2" fill="#e2e8f0" stroke="#334155" stroke-width="2"/>`;
+    out += `<rect x="${x - size / 2}" y="${h - size - 4}" width="${size}" height="${size}" rx="2" fill="#e2e8f0" stroke="#334155" stroke-width="1.2"/>`;
   }
   return out;
 };
@@ -72,8 +82,8 @@ const terminals = (w, h, n, size = 14) => {
 const SYMBOLS = {
   sirius: (w, h) => {
     // ППКУП «Сириус»: металлический шкаф с дверью, окном индикации, клавиатурой и замком
-    const s1 = Math.max(1, Math.min(w, h) * 0.018);
-    const frame = R(0, 0, w, h, { rx: Math.min(10, w * 0.02), fill: '#f1f5f9', stroke: '#334155', sw: s1 * 1.4 });
+    const s1 = Math.max(0.7, Math.min(1.6, Math.min(w, h) * 0.004));
+    const frame = R(0, 0, w, h, { rx: Math.min(10, w * 0.02), fill: '#f1f5f9', stroke: '#334155', sw: s1 * 1.2 });
     const door = R(w * 0.045, h * 0.035, w * 0.91, h * 0.93, { rx: Math.min(7, w * 0.014), fill: '#f8fafc', stroke: '#64748b', sw: s1 });
     const windowR = R(w * 0.09, h * 0.08, w * 0.82, h * 0.34, { rx: Math.min(6, w * 0.012), fill: '#0b2237', stroke: '#334155', sw: s1 });
     // строки на дисплее
@@ -96,8 +106,8 @@ const SYMBOLS = {
     const title = T(w / 2, h * 0.955, Math.min(w, h) * 0.055, 'СИРИУС', { weight: 700, fill: '#334155' });
     return frame + door + windowR + dispLines + keys + leds + handle + title;
   },
-  s2000m: (w, h) => R(0, 0, w, h, { rx: 8, fill: '#f8fafc' }) +
-    R(w * 0.08, h * 0.06, w * 0.84, h * 0.32, { rx: 4, fill: '#0b3b2e', stroke: '#334155' }) +
+  s2000m: (w, h) => R(0, 0, w, h, { rx: 8, fill: '#f8fafc', sw: 1.5 }) +
+    R(w * 0.08, h * 0.06, w * 0.84, h * 0.32, { rx: 4, fill: '#0b3b2e', stroke: '#334155', sw: 1.2 }) +
     T(w / 2, h * 0.76, w * 0.11, 'С2000М', { weight: 700, fill: '#334155' }),
   dip34a: (w, h) => C(w / 2, h / 2, w * 0.47, { fill: '#fffbeb', stroke: '#b45309', sw: 3.5 }) +
     C(w / 2, h / 2, w * 0.28, { fill: '#fff', stroke: '#b45309', sw: 3 }) +
@@ -118,11 +128,11 @@ const SYMBOLS = {
     P(`M${w * 0.82} ${h * 0.28} q${w * 0.1} ${h * 0.22} 0 ${h * 0.44}`, { stroke: '#a855f7', sw: 3 }) +
     P(`M${w * 0.9} ${h * 0.18} q${w * 0.12} ${h * 0.32} 0 ${h * 0.64}`, { stroke: '#a855f7', sw: 2.5 }),
   block: (w, h, label, color, nTerm = 4) => {
-    const sw = Math.max(0.8, Math.min(3.2, Math.min(w, h) * 0.03));
+    const sw = Math.max(0.6, Math.min(1.4, Math.min(w, h) * 0.012));
     const fs = Math.max(4, Math.min(h * 0.26, w * 0.2));
     const termSize = Math.max(2, Math.min(14, w * 0.1));
     return R(0, 0, w, h, { rx: Math.min(6, w * 0.05), fill: '#f0f9ff', stroke: color, sw }) +
-      R(w * 0.07, h * 0.08, w * 0.86, h * 0.52, { rx: Math.max(1, w * 0.03), fill: '#fff', stroke: color, sw: sw * 0.7 }) +
+      R(w * 0.07, h * 0.08, w * 0.86, h * 0.52, { rx: Math.max(1, w * 0.03), fill: '#fff', stroke: color, sw: sw * 0.8 }) +
       T(w / 2, h * 0.46, fs, label, { fill: '#0c4a6e', weight: 700 }) +
       terminals(w, h, nTerm, termSize);
   },
@@ -135,16 +145,16 @@ const SYMBOLS = {
     T(w * 0.3, h * 0.36, h * 0.16, '+', { fill: '#334155', weight: 700 }) +
     T(w * 0.7, h * 0.36, h * 0.16, '−', { fill: '#334155', weight: 700 }) +
     T(w / 2, h * 0.7, h * 0.13, '12 В', { fill: '#475569' }),
-  generic: (w, h, label = '?') => R(0, 0, w, h, { rx: 8, fill: '#f8fafc', stroke: '#475569', sw: 3, dash: '10 7' }) +
+  generic: (w, h, label = '?') => R(0, 0, w, h, { rx: 8, fill: '#f8fafc', stroke: '#475569', sw: 1.5, dash: '10 7' }) +
     T(w / 2, h * 0.62, h * 0.34, label, { fill: '#475569', weight: 700 }),
-  socket: (w, h) => R(0, 0, w, h, { rx: 6, fill: '#f8fafc' }) +
+  socket: (w, h) => R(0, 0, w, h, { rx: 6, fill: '#f8fafc', sw: 1.5 }) +
     C(w / 2, h / 2, w * 0.32, { fill: '#fff', stroke: '#334155', sw: 3.5 }) +
     C(w * 0.38, h * 0.5, w * 0.05, { fill: '#334155', stroke: '#334155', sw: 1 }) +
     C(w * 0.62, h * 0.5, w * 0.05, { fill: '#334155', stroke: '#334155', sw: 1 }),
-  switch: (w, h) => R(0, 0, w, h, { rx: 5, fill: '#f8fafc' }) +
+  switch: (w, h) => R(0, 0, w, h, { rx: 5, fill: '#f8fafc', sw: 1.5 }) +
     R(w * 0.08, h * 0.2, w * 0.84, h * 0.6, { rx: 4, fill: '#e2e8f0', stroke: '#334155', sw: 2.5 }) +
     [0.2, 0.4, 0.6, 0.8].map((k) => P(`M${w * k} ${h * 0.32} l${w * 0.06} ${h * 0.18} l-${w * 0.12} 0 z`, { fill: '#94a3b8', stroke: '#334155', sw: 1.5 })).join(''),
-  rip: (w, h) => R(0, 0, w, h, { rx: 6, fill: '#f8fafc' }) +
+  rip: (w, h) => R(0, 0, w, h, { rx: 6, fill: '#f8fafc', sw: 1.5 }) +
     R(w * 0.08, h * 0.08, w * 0.84, h * 0.34, { rx: 3, fill: '#0f172a', stroke: '#334155', sw: 2 }) +
     R(w * 0.1, h * 0.56, w * 0.35, h * 0.3, { rx: 3, fill: '#fef3c7', stroke: '#b45309', sw: 2 }) +
     T(w * 0.66, h * 0.78, h * 0.2, 'РИП', { fill: '#334155', weight: 700 }),
@@ -349,12 +359,44 @@ export const MODELS = [
     vendor: 'ООО ОБ «СОКРАТ», г. Иркутск',
   }),
   M({
+    id: 'ivepr_2x7', kind: 'bp', symbol: 'rip', w: 324, h: 184,
+    name: 'ИВЭПР 12/2 2х7-Р БР', model: 'ИВЭПР 12/2 2х7-Р БР',
+    full: 'Источник вторичного электропитания резервированный ИВЭПР 12/2 2×7-Р БР (12 В, 2 А, 2×7 А·ч)',
+    vendor: 'ООО «Рубеж»',
+  }),
+  M({
+    id: 'str20ip_ent', kind: 'modul', symbol: 'block', tagText: 'STR20', terminals: 5, w: 108, h: 170,
+    name: 'STR20-IP-Ent', model: 'STR20-IP-Ent',
+    full: 'Сетевой контроллер доступа STR20-IP-Ent (12–24 В, Ethernet, RS-485 OSDP)',
+    vendor: 'ООО «Рубеж»',
+  }),
+  M({
     id: 'custom', kind: 'other', symbol: 'generic', w: 150, h: 150,
     name: 'Прочее устройство', model: '—',
     full: 'Прочее устройство (размеры и наименование задаются в свойствах)',
     vendor: '—',
   }),
 ];
+
+/* ---------- группы приборов по назначению ---------- */
+const SYSTEM_BY_ID = {
+  pritok_kop: 'security',
+  astra_rim: 'security',
+  astra_824: 'security',
+  str20ip_ent: 'skud',
+  ivepr_2x7: 'skud',
+  rip12: 'power',
+  rip56: 'power',
+  bp12: 'power',
+  socket: 'power',
+  switch: 'power',
+  akb: 'power',
+  ethernet: 'other',
+  custom: 'other',
+};
+for (const m of MODELS) {
+  m.system = SYSTEM_BY_ID[m.id] || (m.kind === 'bp' ? 'power' : m.kind === 'other' ? 'other' : 'fire');
+}
 
 export const MODEL_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
 
@@ -421,6 +463,8 @@ const TERMINAL_PROFILES = {
 };
 
 const MODEL_TERMINAL_OVERRIDES = {
+  ivepr_2x7: [['L', 'power220'], ['N', 'power220'], ['PE', 'power220'], ['+12', 'power12'], ['0В', 'power12'], ['Авария', 'signal']],
+  str20ip_ent: [['+12', 'power12'], ['0В', 'power12'], ['LAN', 'lan'], ['A', 'rs485'], ['B', 'rs485']],
   socket: [['L', 'power220'], ['N', 'power220'], ['PE', 'power220']],
   switch: [['L', 'power220'], ['N', 'power220'], ['PE', 'power220'], ['LAN1', 'lan'], ['LAN2', 'lan']],
   ethernet: [['+12', 'power12'], ['0В', 'power12'], ['LAN', 'lan']],

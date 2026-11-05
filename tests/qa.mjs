@@ -332,7 +332,7 @@ async function main() {
 
     const catalog = await import('../js/catalog.js');
     const catalogIds = catalog.MODELS.filter((m) => !m.hidden).map((m) => m.id);
-    check('каталог: ровно 28 моделей устройств', catalog.MODELS.length === 28, `count=${catalog.MODELS.length}`);
+    check('каталог: ровно 30 моделей устройств', catalog.MODELS.length === 30, `count=${catalog.MODELS.length}`);
     check('каталог: идентификаторы моделей уникальны', new Set(catalogIds).size === catalogIds.length);
     const specPositions = catalog.MODELS.map((m) => m.specPos).filter((p) => p != null).sort((a, b) => a - b);
     check('каталог: модели покрывают позиции 1..12 спецификации', specPositions.length === 12 && specPositions.every((v, i) => v === i + 1), JSON.stringify(specPositions));
@@ -484,14 +484,14 @@ async function main() {
     /* ------------------------------------------------------------------ *
      * B. ИНТЕРАКТИВНЫЕ СЦЕНАРИИ                                          *
      * ------------------------------------------------------------------ */
-    section('B1. Палитра: 20 моделей + undo/redo');
+    section('B1. Палитра: 22 модели + undo/redo');
     const appB = await openApp(browser, base, { width: 1680, height: 1000 });
     const { page, errors: errorsB } = appB;
     const s0 = await getState(page);
     check('B: стартовое демо 6 приборов / 3 короба / 3 размера / 1 стена', s0.devices === 6 && s0.channels === 3 && s0.dims === 3 && s0.walls === 1, JSON.stringify({ d: s0.devices, c: s0.channels, dims: s0.dims, w: s0.walls }));
 
     const paletteIds = await page.$$eval('#palette-list .pal-item', (els) => els.map((e) => e.dataset.model));
-    check('B: палитра содержит ровно 20 моделей', paletteIds.length === 20, `count=${paletteIds.length}`);
+    check('B: палитра содержит ровно 22 модели', paletteIds.length === 22, `count=${paletteIds.length}`);
     check('B: модели палитры совпадают с каталогом', catalogIds.every((id) => paletteIds.includes(id)), JSON.stringify(paletteIds.filter((id) => !catalogIds.includes(id))));
 
     let placedAll = true;
@@ -508,9 +508,9 @@ async function main() {
       if (st.devices !== prevCount + 1) placedAll = false;
       prevCount = st.devices;
     }
-    check('B: все 20 моделей размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
+    check('B: все 22 модели размещаются по клику (счётчик +1 каждый раз, режим place)', placedAll, `итог devices=${prevCount}`);
     const s20 = await getState(page);
-    check('B: после размещения 20 моделей устройств 26 (6+20)', s20.devices === 26 && s20.wallDevices === s0.wallDevices + 20, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
+    check('B: после размещения 22 моделей устройств 28 (6+22)', s20.devices === 28 && s20.wallDevices === s0.wallDevices + 22, JSON.stringify({ devices: s20.devices, wallDevices: s20.wallDevices }));
     const placement = await page.evaluate(() => {
       const s = window.BolidGrid.store;
       const wallDevs = s.wallDevices;
@@ -518,27 +518,27 @@ async function main() {
       const tags = wallDevs.map((d) => d.tag);
       return { modelIds, uniqueTags: new Set(tags).size, tagCount: tags.length, devNodes: document.querySelectorAll('#devices .dev').length, wallDevices: wallDevs.length };
     });
-    check('B: размещены все 20 разных моделей', catalogIds.every((id) => placement.modelIds.includes(id)), JSON.stringify(placement.modelIds));
+    check('B: размещены все 22 разных моделей', catalogIds.every((id) => placement.modelIds.includes(id)), JSON.stringify(placement.modelIds));
     check('B: обозначения новых устройств уникальны', placement.uniqueTags === placement.tagCount, `${placement.uniqueTags}/${placement.tagCount}`);
     check('B: SVG-узлы устройств = устройствам стены', placement.devNodes === placement.wallDevices, JSON.stringify(placement));
 
     await page.keyboard.press('Escape');
     await blurAll(page);
-    await pressKeys(page, Array(20).fill('Control+z'), 40);
+    await pressKeys(page, Array(22).fill('Control+z'), 40);
     const su = await getState(page);
-    check('B: 20×undo возвращает исходные 6 приборов', su.devices === 6, `devices=${su.devices}`);
-    check('B: после 20×undo история пуста (canUndo=false)', su.canUndo === false && su.undoLen === 0, JSON.stringify({ canUndo: su.canUndo, undoLen: su.undoLen }));
+    check('B: 22×undo возвращает исходные 6 приборов', su.devices === 6, `devices=${su.devices}`);
+    check('B: после 22×undo история пуста (canUndo=false)', su.canUndo === false && su.undoLen === 0, JSON.stringify({ canUndo: su.canUndo, undoLen: su.undoLen }));
     await blurAll(page);
     await pressKeys(page, ['Control+z'], 60);
     const sExtra = await getState(page);
     check('B: лишний undo не меняет проект и показывает подсказку', sExtra.devices === 6 && /Уже в начале истории/.test(sExtra.toast), JSON.stringify({ devices: sExtra.devices, toast: sExtra.toast }));
     await blurAll(page);
-    await pressKeys(page, Array(20).fill('Control+y'), 30);
+    await pressKeys(page, Array(22).fill('Control+y'), 30);
     const sr = await getState(page);
-    check('B: 20×redo восстанавливает 26 приборов', sr.devices === 26, `devices=${sr.devices}`);
+    check('B: 22×redo восстанавливает 28 приборов', sr.devices === 28, `devices=${sr.devices}`);
     await blurAll(page);
-    await pressKeys(page, Array(20).fill('Control+z'), 30);
-    check('B: повторный 20×undo снова даёт 6 приборов', (await getState(page)).devices === 6);
+    await pressKeys(page, Array(22).fill('Control+z'), 30);
+    check('B: повторный 22×undo снова даёт 6 приборов', (await getState(page)).devices === 6);
 
     /* ---------- B2. Перетаскивание устройства ---------- */
     section('B2. Перетаскивание устройства мышью');

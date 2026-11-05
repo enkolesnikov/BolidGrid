@@ -1067,7 +1067,7 @@ export class WallEditor {
       const x = (model.w * (i + 1)) / (terms.length + 1);
       const pending = this.cableDraft && this.cableDraft.deviceId === d.id && this.cableDraft.index === i;
       return `<g class="terminal${pending ? ' pending' : ''}">
-        <circle class="terminal-dot" cx="${x}" cy="${y}" r="${r}" fill="${TERMINAL_KIND_COLORS[t.kind] || '#38bdf8'}" stroke="#0b1220" stroke-width="${Math.max(2, 1 / ppm)}" vector-effect="non-scaling-stroke"><title>${esc(t.label)} · ${esc(TERMINAL_KIND_LABELS[t.kind] || '')}</title></circle>
+        <circle class="terminal-dot" cx="${x}" cy="${y}" r="${r}" fill="${TERMINAL_KIND_COLORS[t.kind] || '#38bdf8'}" stroke="#0b1220" stroke-width="1.5" vector-effect="non-scaling-stroke"><title>${esc(t.label)} · ${esc(TERMINAL_KIND_LABELS[t.kind] || '')}</title></circle>
         <circle class="terminal-hit" data-type="terminal" data-id="${d.id}" data-index="${i}" cx="${x}" cy="${y}" r="${Math.max(r * 1.8, 22 / ppm)}" fill="transparent"/>
       </g>`;
     }).join('');
@@ -1289,7 +1289,7 @@ export class WallEditor {
       const color = cable?.color || '#38bdf8';
       const sel = this.store.isSelected('connection', conn.id);
       const d = pathD(route.points, (y) => this.toScreenY(y));
-      out += `<path class="cable${sel ? ' sel' : ''}" d="${d}" fill="none" stroke="${color}" stroke-width="${Math.max(8, 2.4 / ppm)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+      out += `<path class="cable${sel ? ' sel' : ''}" d="${d}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
       out += `<path class="cable-hit" data-type="cable" data-id="${conn.id}" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(120, 15 / ppm)}"/>`;
     }
     return out;

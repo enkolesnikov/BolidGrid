@@ -2,7 +2,7 @@
  * panels.js — панели интерфейса: каталог устройств, стены, точные свойства,
  * спецификация оборудования и ведомость коробов.
  */
-import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal } from './catalog.js';
+import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal, SYSTEM_LABELS, SYSTEM_ORDER } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
 
 const el = (html) => {
@@ -19,6 +19,7 @@ export class Panels {
     this.onRequestProjectDialog = onRequestProjectDialog || (() => {});
     this.activeTab = 'props';
     this.search = '';
+    this.systemFilter = 'all';
     this.anchorX = 'left';
     this.anchorY = 'bottom';
     this._bind();
@@ -220,25 +221,36 @@ export class Panels {
     }
     const armed = this.store.armedModelId;
     const q = this.search;
-    const groups = new Map();
-    for (const model of MODELS) {
-      if (model.hidden) continue;
-      if (q) {
-        const hay = `${model.name} ${model.model} ${model.full} ${model.vendor}`.toLowerCase();
-        if (!hay.includes(q)) continue;
-      }
-      if (!groups.has(model.kind)) groups.set(model.kind, []);
-      groups.get(model.kind).push(model);
+    const matches = (model) => {
+      if (model.hidden) return false;
+      if (this.systemFilter !== 'all' && model.system !== this.systemFilter) return false;
+      if (!q) return true;
+      const hay = `${model.name} ${model.model} ${model.full} ${model.vendor}`.toLowerCase();
+      return hay.includes(q);
+    };
+    const available = MODELS.filter(matches);
+
+    const groupsEl = this.$('palette-groups');
+    if (groupsEl) {
+      const systems = SYSTEM_ORDER.filter((sys) => MODELS.some((m) => !m.hidden && m.system === sys));
+      groupsEl.innerHTML = [`<button class="pal-filter ${this.systemFilter === 'all' ? 'active' : ''}" data-sys-filter="all">Все</button>`]
+        .concat(systems.map((sys) => `<button class="pal-filter ${this.systemFilter === sys ? 'active' : ''}" data-sys-filter="${sys}">${escAll(SYSTEM_LABELS[sys])}</button>`))
+        .join('');
+      groupsEl.querySelectorAll('[data-sys-filter]').forEach((btn) => btn.addEventListener('click', () => {
+        this.systemFilter = btn.dataset.sysFilter;
+        this.renderPalette();
+      }));
     }
-    if (!groups.size) {
-      box.innerHTML = `<div class="empty">Ничего не найдено по запросу «${escAll(this.search)}».</div>`;
+
+    if (!available.length) {
+      box.innerHTML = `<div class="empty">Ничего не найдено${q ? ` по запросу «${escAll(this.search)}»` : ''}.</div>`;
       return;
     }
     let html = '';
-    for (const kind of KIND_ORDER) {
-      const models = groups.get(kind);
-      if (!models?.length) continue;
-      html += `<div class="pal-group-title">${escAll(KIND_LABELS[kind] || kind)}</div>`;
+    for (const sys of SYSTEM_ORDER) {
+      const models = available.filter((m) => m.system === sys);
+      if (!models.length) continue;
+      html += `<div class="pal-group-title">${escAll(SYSTEM_LABELS[sys])}</div>`;
       for (const model of models) {
         const placed = counts.get(model.id) || 0;
         const qty = model.specPos != null ? specQty.get(model.specPos) : null;
@@ -320,7 +332,7 @@ export class Panels {
     const xValue = this.anchorX === 'right' ? d.x + model.w : this.anchorX === 'center' ? d.x + model.w / 2 : d.x;
     const yValue = this.anchorY === 'top' ? d.y + model.h : this.anchorY === 'center' ? d.y + model.h / 2 : d.y;
     const horizontalChannels = this.store.wallChannels.filter((c) => c.points.some((p, i) => i && p[1] === c.points[i - 1][1]));
-    return `<div class="prop-title"><span class="badge">${escAll(d.tag || '—')}</span><h4>${escAll(model.name)}</h4></div>
+    return `<div class="prop-title"><span class="badge">${escAll(d.tag || '—')}</span><span class="badge">${escAll(SYSTEM_LABELS[model.system] || '')}</span><h4>${escAll(model.name)}</h4></div>
       <div class="form">
         <div class="row2">
           <label>Обозначение<input data-f="tag" value="${escAll(d.tag)}" placeholder="1.1"></label>
