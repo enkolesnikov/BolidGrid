@@ -27,6 +27,9 @@
   <symbol id="i-route" viewBox="0 0 24 24"><path d="M5 19V8h14v7h-8"/><circle cx="5" cy="19" r="2"/><circle cx="11" cy="15" r="2"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h6V4M8 20v-7h8v7"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.8 2.2c-.8.5-1.3 1.1-1.3 2.1"/><path d="M12 17h.01"/></symbol>
 </svg>
 
 <header id="topbar" class="app-chrome">
@@ -35,12 +38,13 @@
     <div class="brand-text"><b>BolidGrid</b><span>Монтажный план стены</span></div>
   </div>
   <label class="project-field"><span>Проект</span><input id="project-name" type="text" autocomplete="off" spellcheck="false" aria-label="Название проекта"></label>
+  <span id="save-status" class="save-status" role="status" aria-live="polite" title="Автосохранение проекта"><i></i><b>Сохранено</b></span>
   <div class="top-actions">
     <button class="btn icon" data-action="undo" title="Отменить (Ctrl+Z)" aria-label="Отменить"><svg><use href="#i-undo"/></svg></button>
     <button class="btn icon" data-action="redo" title="Повторить (Ctrl+Y)" aria-label="Повторить"><svg><use href="#i-redo"/></svg></button>
     <span class="sep"></span>
-    <button class="btn" data-action="import" title="Загрузить проект из JSON">Загрузить</button>
-    <button class="btn" data-action="save-project" title="Сохранить проект в файл (Ctrl+S)">Сохранить</button>
+    <button class="btn" data-action="import" title="Загрузить проект из JSON"><svg><use href="#i-open"/></svg>Загрузить</button>
+    <button class="btn accent" data-action="save-project" title="Сохранить проект в файл (Ctrl+S)"><svg><use href="#i-save"/></svg>Сохранить</button>
     <button class="btn" data-action="export-svg">SVG</button>
     <button class="btn quiet-action" data-action="print">Печать</button>
     <button class="btn quiet-action" data-action="save" hidden>Сохранить</button>
@@ -60,7 +64,10 @@
     </section>
     <section class="panel grow" id="panel-palette">
       <h2>Каталог приборов</h2>
-      <input id="palette-search" class="search" type="search" placeholder="Найти модель…" autocomplete="off">
+      <div class="search-wrap">
+        <input id="palette-search" class="search" type="search" placeholder="Найти модель…" autocomplete="off">
+        <button id="palette-search-clear" class="search-clear" type="button" aria-label="Очистить поиск" title="Очистить поиск" hidden>×</button>
+      </div>
       <div id="palette-groups" class="pal-groups"></div>
       <div id="palette-list" class="palette"></div>
       <div class="palette-hint">Выберите модель и коснитесь места на стене. Положение затем можно задать точно в миллиметрах.</div>
@@ -94,10 +101,18 @@
     </div>
     <div id="canvas-wrap">
       <svg id="wall" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" tabindex="0" aria-label="Монтажный план стены"></svg>
+      <div id="canvas-legend" class="canvas-legend" aria-label="Цвета групп приборов" hidden>
+        <span class="legend-title">Группы</span>
+        <span class="legend-item"><i style="background:#ef4444"></i>пожарные</span>
+        <span class="legend-item"><i style="background:#38bdf8"></i>охранные</span>
+        <span class="legend-item"><i style="background:#a855f7"></i>СКУД</span>
+        <span class="legend-item"><i style="background:#f59e0b"></i>питание</span>
+        <span class="legend-item"><i style="background:#94a3b8"></i>прочее</span>
+      </div>
       <div id="canvas-hint" class="canvas-hint"></div>
     </div>
     <div id="statusbar" class="app-chrome">
-      <span id="st-wall">—</span><span id="st-coords">x: — · h: —</span><span id="st-zoom">100%</span><span id="st-counts">приборов: 0 · коробов: 0 · размеров: 0</span><button id="st-check" class="status-check ok" type="button" aria-label="Проверка пересечений">Нет пересечений</button><span id="st-hint">Стрелки — сдвиг на 10 мм · Shift+стрелки — 1 мм · Del — удалить</span>
+      <span id="st-wall">—</span><span id="st-coords">x: — · h: —</span><span id="st-zoom">100%</span><span id="st-counts">приборов: 0 · коробов: 0 · размеров: 0</span><button id="st-check" class="status-check ok" type="button" aria-label="Проверка пересечений">Нет пересечений</button><span id="st-hint">Стрелки — сдвиг на 10 мм · Shift+стрелки — 1 мм · Del — удалить</span><button id="st-help" class="status-help" type="button" title="Горячие клавиши (?)" aria-label="Горячие клавиши">?</button>
     </div>
   </section>
 
@@ -123,6 +138,7 @@
       <button class="btn" data-menu-action="export">Скачать JSON</button>
       <button class="btn" data-menu-action="export-svg">Экспорт SVG</button>
       <button class="btn" data-menu-action="print">Печать / PDF</button>
+      <button class="btn" data-menu-action="shortcuts">Горячие клавиши</button>
       <button class="btn" data-menu-action="save" hidden>Сохранить</button>
       <button class="btn" data-menu-action="demo">Демо-проект</button>
       <button class="btn danger" data-menu-action="reset">Новый проект</button>
@@ -131,7 +147,7 @@
     <div class="menu-size"><span>Размеры стены, м</span><div><input id="wall-w-mobile" type="number" step="0.1" min="0.5" max="60" inputmode="decimal" aria-label="Длина стены"><b>×</b><input id="wall-h-mobile" type="number" step="0.1" min="0.5" max="20" inputmode="decimal" aria-label="Высота стены"></div></div>
     <div class="menu-colors"><span>Цвет нового короба</span><span id="tool-colors-mobile" class="tool-colors"></span></div>
     <label class="switch menu-labels">Подписи на листе<select id="sel-labels-mobile" class="mini-select"><option value="none" selected>Нет</option><option value="tag">Краткие</option><option value="full">Полные</option></select></label>
-    <div class="menu-toggles"><label class="switch"><input type="checkbox" id="chk-snap-mobile" checked> Привязка и направляющие</label><label class="switch"><input type="checkbox" id="chk-grid-mobile" checked> Сетка</label><label class="switch">Шаг, мм <select id="sel-grid" class="mini-select"><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></label></div>
+    <div class="menu-toggles"><label class="switch"><input type="checkbox" id="chk-legend" checked> Легенда групп</label><label class="switch"><input type="checkbox" id="chk-snap-mobile" checked> Привязка и направляющие</label><label class="switch"><input type="checkbox" id="chk-grid-mobile" checked> Сетка</label><label class="switch">Шаг, мм <select id="sel-grid" class="mini-select"><option value="10">10</option><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select></label></div>
     <div class="pal-group-title">Стены</div><div id="menu-walls" class="menu-walls"></div>
     <button class="btn" id="btn-add-wall-mobile"><svg><use href="#i-plus"/></svg> Добавить стену</button>
     <p class="menu-note">Проект сохраняется автоматически. «Сохранить проект» создаёт резервную копию JSON — на телефоне она попадает в «Загрузки/BolidGrid».</p>

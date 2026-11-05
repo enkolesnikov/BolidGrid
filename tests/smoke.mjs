@@ -797,6 +797,57 @@ async function main() {
     });
     check('служебные рамки пересечений не попадают в экспорт SVG', reviewNotExported);
 
+    /* ---------- UX: статус, каталог, легенда, справка ---------- */
+    await page.evaluate(() => document.activeElement?.blur?.());
+    check('в шапке есть статус автосохранения', /Сохранено|Сохранение/.test(await page.locator('#save-status').innerText()));
+    const paletteBefore = await page.locator('#palette-list .pal-item').count();
+    await page.locator('#palette-list [data-pal-group]').first().click();
+    await page.waitForTimeout(180);
+    const paletteCollapsed = await page.locator('#palette-list .pal-item').count();
+    await page.locator('#palette-list [data-pal-group]').first().click();
+    await page.waitForTimeout(180);
+    const paletteExpanded = await page.locator('#palette-list .pal-item').count();
+    check('группы каталога сворачиваются и разворачиваются', paletteBefore > paletteCollapsed && paletteExpanded === paletteBefore, JSON.stringify({ paletteBefore, paletteCollapsed, paletteExpanded }));
+    await page.fill('#palette-search', 'сириус');
+    await page.waitForTimeout(200);
+    const searchOne = await page.locator('#palette-list .pal-item').count();
+    await page.locator('#palette-search-clear').click();
+    await page.waitForTimeout(200);
+    check('поиск в каталоге очищается кнопкой ×', searchOne === 1 && (await page.locator('#palette-search').inputValue()) === '' && (await page.locator('#palette-list .pal-item').count()) === paletteBefore, `searchOne=${searchOne}`);
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press('?');
+    await page.waitForTimeout(250);
+    const shortcuts = await page.evaluate(() => ({ open: !document.getElementById('modal').hidden, title: document.getElementById('modal-title').textContent, rows: document.querySelectorAll('#modal .shortcuts-grid kbd').length }));
+    check('справка по горячим клавишам открывается', shortcuts.open && shortcuts.title === 'Горячие клавиши' && shortcuts.rows >= 10, JSON.stringify(shortcuts));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    const legend = await page.evaluate(() => {
+      const box = document.getElementById('canvas-legend');
+      const cb = document.getElementById('chk-legend');
+      const before = !box.hidden;
+      cb.checked = false;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+      const off = box.hidden;
+      cb.checked = true;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+      return { before, off, on: !box.hidden, items: box.querySelectorAll('.legend-item').length };
+    });
+    check('легенда групп скрывается и показывается', legend.before && legend.off && legend.on && legend.items === 5, JSON.stringify(legend));
+    const groupUi = await page.evaluate(() => {
+      const S = window.BolidGrid;
+      const d = S.store.wallDevices[0];
+      if (!d) return null;
+      S.store.selectOne('device', d.id);
+      S.panels.renderInspector();
+      return { id: d.id, before: d.system || S.getModel(d.modelId).system };
+    });
+    if (groupUi) {
+      await page.locator('#tab-props .group-chip[data-group="skud"]').click();
+      await page.waitForTimeout(250);
+      const after = await page.evaluate((id) => ({ system: window.BolidGrid.store.getDevice(id)?.system, stroke: document.querySelector(`#devices .dev[data-id="${id}"] .dev-group-frame`)?.getAttribute('stroke') }), groupUi.id);
+      check('быстрый выбор группы в свойствах меняет цвет обводки', after.system === 'skud' && after.stroke === '#a855f7', JSON.stringify(after));
+    }
+
     check('нет ошибок JavaScript на странице', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
     check('нет ошибок в консоли', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
 

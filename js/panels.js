@@ -20,6 +20,7 @@ export class Panels {
     this.activeTab = 'props';
     this.search = '';
     this.systemFilter = 'all';
+    this.collapsedSystems = new Set();
     this.anchorX = 'left';
     this.anchorY = 'bottom';
     this._bind();
@@ -251,12 +252,20 @@ export class Panels {
     for (const sys of SYSTEM_ORDER) {
       const models = available.filter((m) => m.system === sys);
       if (!models.length) continue;
-      html += `<div class="pal-group-title"><span class="sys-dot" style="background:${SYSTEM_COLORS[sys] || '#94a3b8'}"></span>${escAll(SYSTEM_LABELS[sys])}<span class="sys-note">${this.store.placeSystem === sys ? 'новые приборы — в этой группе' : ''}</span></div>`;
+      const collapsed = this.collapsedSystems.has(sys);
+      const color = SYSTEM_COLORS[sys] || '#94a3b8';
+      html += `<div class="pal-group-title ${collapsed ? 'collapsed' : ''}" data-pal-group="${sys}" role="button" tabindex="0" aria-expanded="${!collapsed}" title="${collapsed ? 'Развернуть' : 'Свернуть'} группу">
+        <svg class="pg-chevron" aria-hidden="true"><use href="#i-chevron"/></svg>
+        <span class="sys-dot" style="background:${color}"></span>${escAll(SYSTEM_LABELS[sys])}
+        <span class="pg-count">${models.length}</span>
+        <span class="sys-note">${this.store.placeSystem === sys ? 'новые приборы — в этой группе' : ''}</span>
+      </div>`;
+      if (collapsed) continue;
       for (const model of models) {
         const placed = counts.get(model.id) || 0;
         const qty = model.specPos != null ? specQty.get(model.specPos) : null;
         const over = qty != null && placed > qty;
-        html += `<button class="pal-item ${armed === model.id ? 'armed' : ''}" data-model="${model.id}" title="${escAll(model.full)}">
+        html += `<button class="pal-item ${armed === model.id ? 'armed' : ''} ${this.systemFilter === sys ? 'sys-active' : ''}" data-model="${model.id}" style="--sys-color:${color}" title="${escAll(model.full)}">
           <span class="thumb">${modelThumb(model, 40)}</span>
           <span class="pname">${escAll(model.name)}<small>${escAll(model.vendor || '')}${model.specPos != null ? ` · поз. ${model.specPos}` : ''}</small></span>
           <span class="pcount">${qty != null ? `<b class="${over ? 'over' : ''}">${placed}</b> / ${qty}` : placed}<small>${model.unit || 'шт.'}</small></span>
@@ -266,6 +275,21 @@ export class Panels {
     box.innerHTML = html;
     box.querySelectorAll('[data-model]').forEach((btn) => {
       btn.addEventListener('click', () => this.editor.armModel(btn.dataset.model));
+    });
+    box.querySelectorAll('[data-pal-group]').forEach((title) => {
+      const toggle = () => {
+        const sys = title.dataset.palGroup;
+        if (this.collapsedSystems.has(sys)) this.collapsedSystems.delete(sys);
+        else this.collapsedSystems.add(sys);
+        this.renderPalette();
+      };
+      title.addEventListener('click', toggle);
+      title.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggle();
+        }
+      });
     });
   }
 
@@ -308,6 +332,11 @@ export class Panels {
         <div><span>2</span>Перетащите или задайте координаты</div>
         <div><span>3</span>Проведите короб и добавьте размеры</div>
       </div>
+      <div class="empty-actions">
+        <button class="btn primary" data-act="quick-palette">Открыть каталог</button>
+        <button class="btn" data-act="quick-channel">Провести короб</button>
+        <button class="btn tiny" data-act="quick-demo">Демо-проект</button>
+      </div>
       <button class="review-summary ${issues.length ? 'warn' : 'ok'}" data-act="review"><span>Проверка стены</span><b>${issues.length ? `Пересечений: ${issues.length}` : 'Пересечений нет'}</b></button>
       <div class="measure-preview"><span>Общая длина трасс</span><b>${m(stats.channelLen)}</b></div>
     </div>`;
@@ -339,6 +368,7 @@ export class Panels {
           <label>Обозначение<input data-f="tag" value="${escAll(d.tag)}" placeholder="1.1"></label>
           <label>Модель<select data-f="modelId">${modelOptions}</select></label>
         </div>
+        <div class="group-chips">${SYSTEM_ORDER.map((sys) => `<button class="group-chip ${((d.system || model.system) === sys) ? 'active' : ''}" data-group="${sys}" style="--c:${SYSTEM_COLORS[sys] || '#94a3b8'}" title="Группа: ${escAll(SYSTEM_LABELS[sys])}"><span class="sys-dot" style="background:${SYSTEM_COLORS[sys] || '#94a3b8'}"></span>${escAll(SYSTEM_LABELS[sys])}</button>`).join('')}</div>
         <label>Группа приборов<select data-f="system">${SYSTEM_ORDER.map((sys) => `<option value="${sys}" ${((d.system || model.system) === sys) ? 'selected' : ''}>${escAll(SYSTEM_LABELS[sys])}</option>`).join('')}</select></label>
         <div class="hintline">Группа задаёт цвет тонкой обводки прибора на листе; для новых приборов берётся из фильтра каталога.</div>
         <section class="prop-section">
@@ -485,6 +515,9 @@ export class Panels {
       box.querySelectorAll('[data-f]').forEach((inp) => inp.addEventListener('change', () => {
         st.updateDevice(single.id, { [inp.dataset.f]: inp.type === 'number' ? parseFloat(inp.value) || 0 : inp.value });
       }));
+      box.querySelectorAll('[data-group]').forEach((btn) => btn.addEventListener('click', () => {
+        st.updateDevice(single.id, { system: btn.dataset.group });
+      }));
       const updatePosition = (axis, input) => {
         const model = getModel(single.modelId);
         const value = Math.max(0, parseFloat(input.value) || 0);
@@ -551,6 +584,16 @@ export class Panels {
       case 'dup': st.duplicateDevices(devices.map((d) => d.id)); break;
       case 'del': st.removeSelection(); break;
       case 'review': this.openIssuesDialog(); break;
+      case 'quick-palette':
+        if (window.matchMedia?.('(max-width:900px)').matches) {
+          document.querySelector('#mobile-bar [data-sheet="palette"]')?.click();
+        } else {
+          this.$('palette-search')?.focus();
+          this.toast('Выберите модель в каталоге слева');
+        }
+        break;
+      case 'quick-channel': this.editor.setTool('channel'); break;
+      case 'quick-demo': window.BolidGrid?.loadDemo?.(true); break;
       case 'apply-gap': {
         const input = this.$('tab-props')?.querySelector('[data-gap-value]');
         const direction = this.$('tab-props')?.querySelector('[data-gap-direction]')?.value || 'x';
@@ -826,6 +869,29 @@ export class Panels {
       { label: yesLabel, cls: 'danger', onClick: (close) => { close(); onYes(); } },
       { label: 'Отмена', onClick: (close) => close() },
     ]);
+  }
+
+  openShortcuts() {
+    const rows = [
+      ['V', 'Инструмент «Выбор»'],
+      ['C', 'Инструмент «Короб»'],
+      ['L', 'Инструмент «Связь по клеммам»'],
+      ['M', 'Инструмент «Размер»'],
+      ['H', 'Панорама'],
+      ['F', 'Показать всю стену'],
+      ['Ctrl + Z', 'Отменить'],
+      ['Ctrl + Y', 'Повторить'],
+      ['Ctrl + S', 'Сохранить проект в файл'],
+      ['Ctrl + D', 'Дублировать выбранные приборы'],
+      ['Del', 'Удалить выбранное'],
+      ['Esc', 'Отменить действие / снять выделение'],
+      ['Стрелки', 'Сдвиг на 10 мм'],
+      ['Shift + стрелки', 'Сдвиг на 1 мм'],
+      ['?', 'Эта справка'],
+    ];
+    const body = `<div class="shortcuts-grid">${rows.map(([key, label]) => `<kbd>${escAll(key)}</kbd><span>${escAll(label)}</span>`).join('')}</div>
+      <p class="shortcuts-note">На телефоне: тап — выбрать, удержание — добавить в выделение, два пальца — масштаб и панорама. «Готово» в подсказке завершает размещение или трассу.</p>`;
+    this.openModal('Горячие клавиши', body, [{ label: 'Закрыть' }], { wide: true });
   }
 
   toast(text, isErr = false) {

@@ -38,6 +38,29 @@ function updateStatus(s) {
   if (counts) counts.textContent = `приборов: ${s.counts.devices} · коробов: ${s.counts.channels} · размеров: ${s.counts.dims || 0}`;
 }
 
+/* статус автосохранения */
+const saveStatusEl = $('save-status');
+function renderSaveStatus(state, at = Date.now()) {
+  if (!saveStatusEl) return;
+  const label = saveStatusEl.querySelector('b');
+  saveStatusEl.classList.toggle('saving', state === 'saving');
+  saveStatusEl.classList.toggle('error', state === 'error');
+  let text = 'Сохранено';
+  if (state === 'saving') text = 'Сохранение…';
+  else if (state === 'error') text = 'Не сохранено';
+  else {
+    const d = new Date(at);
+    text = `Сохранено ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  if (label) label.textContent = text;
+  saveStatusEl.title = state === 'error' ? 'Не удалось сохранить — проверьте доступ к хранилищу' : 'Проект сохраняется автоматически';
+}
+store.on((type, detail) => {
+  if (type === 'saving') renderSaveStatus('saving');
+  else if (type === 'saved') renderSaveStatus('saved', detail?.at);
+  else if (type === 'save-error') renderSaveStatus('error');
+});
+
 function updatePlacementStatus() {
   const button = $('st-check');
   if (!button) return;
@@ -210,6 +233,7 @@ const actions = {
     });
   },
   'edit-project': () => panels.openProjectDialog(),
+  shortcuts: () => panels.openShortcuts(),
 };
 
 for (const btn of document.querySelectorAll('[data-action]')) {
@@ -471,10 +495,19 @@ $('btn-zoom-in')?.addEventListener('click', () => editor.zoomBy(1.25));
 $('btn-zoom-out')?.addEventListener('click', () => editor.zoomBy(1 / 1.25));
 $('btn-zoom-fit')?.addEventListener('click', () => editor.fit());
 
+function syncLegend() {
+  const legend = $('canvas-legend');
+  const toggle = $('chk-legend');
+  const on = store.settings.showLegend !== false;
+  if (legend) legend.hidden = !on;
+  if (toggle) toggle.checked = on;
+}
+
 function syncViewSettings() {
   for (const id of ['chk-snap', 'chk-snap-mobile']) if ($(id)) $(id).checked = store.settings.snap;
   for (const id of ['chk-grid', 'chk-grid-mobile']) if ($(id)) $(id).checked = store.settings.showGrid;
   if ($('sel-grid')) $('sel-grid').value = String(store.settings.grid || 50);
+  syncLegend();
 }
 for (const id of ['chk-snap', 'chk-snap-mobile']) $(id)?.addEventListener('change', (e) => {
   store.settings.snap = e.target.checked;
@@ -493,6 +526,40 @@ $('sel-grid')?.addEventListener('change', (e) => {
   store.scheduleSave();
   editor.render();
 });
+$('chk-legend')?.addEventListener('change', (e) => {
+  store.settings.showLegend = e.target.checked;
+  store.scheduleSave();
+  syncLegend();
+  panels.toast(e.target.checked ? 'Легенда групп включена' : 'Легенда групп скрыта');
+});
+$('st-help')?.addEventListener('click', () => panels.openShortcuts());
+/* поиск в каталоге: очистка и переход к результатам */
+const paletteSearchInput = $('palette-search');
+const paletteSearchClear = $('palette-search-clear');
+function syncPaletteClear() {
+  if (paletteSearchClear) paletteSearchClear.hidden = !paletteSearchInput?.value;
+}
+paletteSearchInput?.addEventListener('input', syncPaletteClear);
+paletteSearchInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    paletteSearchInput.value = '';
+    paletteSearchInput.dispatchEvent(new Event('input'));
+    e.preventDefault();
+  } else if (e.key === 'ArrowDown') {
+    const first = document.querySelector('#palette-list .pal-item');
+    if (first) {
+      first.focus();
+      e.preventDefault();
+    }
+  }
+});
+paletteSearchClear?.addEventListener('click', () => {
+  if (!paletteSearchInput) return;
+  paletteSearchInput.value = '';
+  paletteSearchInput.dispatchEvent(new Event('input'));
+  paletteSearchInput.focus();
+});
+syncPaletteClear();
 $('file-input')?.addEventListener('change', (e) => {
   const file = e.target.files?.[0];
   if (file) doImport(file);
@@ -531,7 +598,10 @@ window.addEventListener('keydown', (e) => {
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
   const ctrl = e.ctrlKey || e.metaKey;
-  if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    e.preventDefault();
+    actions.shortcuts();
+  } else if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
     e.preventDefault();
     actions.undo();
   } else if ((ctrl && e.key.toLowerCase() === 'y') || (ctrl && e.shiftKey && e.key.toLowerCase() === 'z')) {
@@ -621,6 +691,7 @@ window.addEventListener('afterprint', () => {
   syncWallSizeUI();
   syncViewSettings();
   renderToolColors();
+  renderSaveStatus('saved');
   updateSelectionDock();
   updatePlacementStatus();
   document.body.classList.toggle('tool-channel', store.tool === 'channel');

@@ -42,7 +42,7 @@ export class Store {
     this.tool = 'select';
     this.armedModelId = null;
     this.placeSystem = null;
-    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8', selectionDims: true, smartSnap: true };
+    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8', selectionDims: true, smartSnap: true, showLegend: true };
     this._undo = [];
     this._redo = [];
     this._before = null;
@@ -686,6 +686,7 @@ export class Store {
   }
   scheduleSave() {
     clearTimeout(this._saveTimer);
+    this.emit('saving');
     this._saveTimer = setTimeout(() => this.save(), 500);
   }
   save() {
@@ -700,9 +701,11 @@ export class Store {
           settings: this.settings,
         })
       );
+      this.emit('saved', { at: Date.now() });
       return true;
     } catch (err) {
       console.warn('[store] не удалось сохранить проект', err);
+      this.emit('save-error', { message: String(err?.message || err) });
       return false;
     }
   }
