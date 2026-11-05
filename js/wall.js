@@ -1073,7 +1073,7 @@ export class WallEditor {
     }).join('');
   }
 
-  /** Маршрут кабеля: от клеммы A до клеммы B по коробу (или Г-образно вне короба). */
+  /** Маршрут кабеля: от клеммы A до клеммы B по сети коробов (или Г-образно вне короба). */
   routeConnection(conn) {
     const store = this.store;
     const a = store.getDevice(conn.from?.deviceId);
@@ -1091,34 +1091,161 @@ export class WallEditor {
     if (ta.kind === 'power220' || tb.kind === 'power220') return { points: null, length: 0, inChannel: false, power220: true };
     const pa = this._terminalPoint(a, ia, termsA.length);
     const pb = this._terminalPoint(b, ib, termsB.length);
-    let best = null;
-    for (const ch of store.wallChannels) {
-      const ca = closestOnPolyline(pa, ch.points);
-      const cb = closestOnPolyline(pb, ch.points);
-      if (!ca || !cb) continue;
-      const along = this._channelRoute(ch.points, ca, cb);
-      const pts = this._dedupe([pa, ...(this._dist(pa, ca.point) > 2 ? [ca.point] : []), ...along, ...(this._dist(pb, cb.point) > 2 ? [cb.point] : []), pb]);
-      const len = this._polyLen(pts);
-      const cost = this._dist(pa, ca.point) + this._polyLen(along) + this._dist(pb, cb.point);
-      if (!best || cost < best.cost) best = { points: pts, length: len, inChannel: true, cost };
-    }
-    if (!best) {
-      const pts = this._dedupe(orthoPath(pa, pb));
-      return { points: pts, length: this._polyLen(pts), inChannel: false, power220: false };
-    }
-    return best;
+
+    const network = this._buildCableNetwork(pa, pb);
+    const path = this._shortestCablePath(network, pa, pb);
+    if (path) return { points: path.points, length: path.length, inChannel: true, power220: false };
+
+    const pts = this._dedupe(orthoPath(pa, pb));
+    return { points: pts, length: this._polyLen(pts), inChannel: false, power220: false };
   }
 
-  _channelRoute(points, ca, cb) {
-    if (ca.index === cb.index) return [ca.point, cb.point];
-    const seq = [ca.point];
-    if (ca.index < cb.index) {
-      for (let k = ca.index + 1; k <= cb.index; k++) seq.push(points[k]);
-    } else {
-      for (let k = ca.index; k >= cb.index + 1; k--) seq.push(points[k]);
+  /** Граф кабельной сети: все короба на стене + точки съёма кабеля к клеммам. */
+  _buildCableNetwork(pa, pb) {
+    const channels = this.store.wallChannels;
+    const nodes = new Map();
+    const addNode = (p) => {
+      const key = `${Math.round(p[0])},${Math.round(p[1])}`;
+      if (!nodes.has(key)) nodes.set(key, { p: [Math.round(p[0]), Math.round(p[1])], edges: new Map() });
+      return key;
+    };
+    const addEdge = (ka, kb) => {
+      if (ka === kb) return;
+      const a = nodes.get(ka);
+      const b = nodes.get(kb);
+      if (!a || !b) return;
+      const w = this._dist(a.p, b.p);
+      if (w < 0.6) return;
+      a.edges.set(kb, Math.min(a.edges.get(kb) ?? Infinity, w));
+      b.edges.set(ka, Math.min(b.edges.get(ka) ?? Infinity, w));
+    };
+    const addPath = (pts) => {
+      for (let i = 1; i < pts.length; i++) addEdge(addNode(pts[i - 1]), addNode(pts[i]));
+    };
+
+    // все вершины коробов + точки клемм участвуют в разбиении сегментов
+    const special = [];
+    for (const ch of channels) for (const p of ch.points) special.push(p);
+    for (const d of this.store.wallDevices) {
+      const model = getModel(d.modelId);
+      const terms = terminalsForModel(model);
+      for (let i = 0; i < terms.length; i++) special.push(this._terminalPoint(d, i, terms.length));
     }
-    seq.push(cb.point);
-    return seq;
+
+    for (const ch of channels) {
+      for (let i = 0; i < ch.points.length - 1; i++) {
+        const sa = ch.points[i];
+        const sb = ch.points[i + 1];
+        const dx = sb[0] - sa[0];
+        const dy = sb[1] - sa[1];
+        const len2 = dx * dx + dy * dy;
+        if (len2 < 1) continue;
+        const ts = new Set([0, 1]);
+        const addT = (t) => {
+          if (t > 0.0005 && t < 0.9995) ts.add(t);
+        };
+        for (const sp of special) {
+          // проекция каждой клеммы/вершины делит сегмент: к этой точке подключается
+          // кабель от прибора или стык с другим коробом
+          const t = ((sp[0] - sa[0]) * dx + (sp[1] - sa[1]) * dy) / len2;
+          addT(t);
+        }
+        for (const ch2 of channels) {
+          for (let j = 0; j < ch2.points.length - 1; j++) {
+            if (ch2 === ch && j === i) continue;
+            const inter = this._segmentIntersection(sa, sb, ch2.points[j], ch2.points[j + 1]);
+            if (!inter) continue;
+            const t = ((inter[0] - sa[0]) * dx + (inter[1] - sa[1]) * dy) / len2;
+            if (t > 0.0005 && t < 0.9995) addT(t);
+          }
+        }
+        const ordered = [...ts].sort((x, y) => x - y).map((t) => [sa[0] + dx * t, sa[1] + dy * t]);
+        addPath(ordered);
+      }
+    }
+
+    // клеммы подключаем к ближайшему коробу (кабель выходит из прибора в короб)
+    const terminalKeys = [];
+    for (const [p, name] of [[pa, 'a'], [pb, 'b']]) {
+      const tKey = `terminal:${name}:${Math.round(p[0])},${Math.round(p[1])}`;
+      const tNode = { p: [p[0], p[1]], edges: new Map() };
+      nodes.set(tKey, tNode);
+      let best = null;
+      for (const ch of channels) {
+        for (let i = 0; i < ch.points.length - 1; i++) {
+          const proj = this._projectOnSegment(p, ch.points[i], ch.points[i + 1]);
+          if (!proj) continue;
+          const d = this._dist(p, proj);
+          if (!best || d < best.dist) best = { point: proj, dist: d };
+        }
+      }
+      if (best) {
+        const projKey = addNode(best.point);
+        if (projKey !== tKey) addEdge(tKey, projKey);
+      }
+      terminalKeys.push(tKey);
+    }
+    return { nodes, start: terminalKeys[0], end: terminalKeys[1] };
+  }
+
+  _projectOnSegment(p, a, b) {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1) return null;
+    let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2;
+    t = clamp(t, 0, 1);
+    return [a[0] + dx * t, a[1] + dy * t];
+  }
+
+  /** Пересечение двух отрезков (в т.ч. ортогональных); null, если нет. */
+  _segmentIntersection(a, b, c, d) {
+    const r = [b[0] - a[0], b[1] - a[1]];
+    const s = [d[0] - c[0], d[1] - c[1]];
+    const den = r[0] * s[1] - r[1] * s[0];
+    if (Math.abs(den) < 1e-9) return null; // параллельные/коллинеарные
+    const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den;
+    const u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+    if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) return null;
+    return [a[0] + r[0] * t, a[1] + r[1] * t];
+  }
+
+  /** Дейкстра по кабельной сети. */
+  _shortestCablePath(network, pa, pb) {
+    const { nodes, start, end } = network;
+    if (!nodes.has(start) || !nodes.has(end)) return null;
+    const dist = new Map([[start, 0]]);
+    const prev = new Map();
+    const open = new Set([start]);
+    while (open.size) {
+      let current = null;
+      let best = Infinity;
+      for (const key of open) {
+        const d = dist.get(key) ?? Infinity;
+        if (d < best) { best = d; current = key; }
+      }
+      if (current == null) break;
+      open.delete(current);
+      if (current === end) break;
+      const node = nodes.get(current);
+      for (const [next, weight] of node.edges) {
+        const alt = best + weight;
+        if (alt < (dist.get(next) ?? Infinity)) {
+          dist.set(next, alt);
+          prev.set(next, current);
+          open.add(next);
+        }
+      }
+    }
+    if (!dist.has(end)) return null;
+    const keys = [end];
+    while (keys[0] !== start) {
+      const p = prev.get(keys[0]);
+      if (!p || keys.length > 5000) return null;
+      keys.unshift(p);
+    }
+    const points = keys.map((k) => nodes.get(k).p);
+    return { points: this._dedupe(points), length: dist.get(end) };
   }
 
   _dedupe(pts) {
@@ -1138,6 +1265,18 @@ export class WallEditor {
     let len = 0;
     for (let i = 1; i < pts.length; i++) len += this._dist(pts[i - 1], pts[i]);
     return len;
+  }
+
+  _channelRoute(points, ca, cb) {
+    if (ca.index === cb.index) return [ca.point, cb.point];
+    const seq = [ca.point];
+    if (ca.index < cb.index) {
+      for (let k = ca.index + 1; k <= cb.index; k++) seq.push(points[k]);
+    } else {
+      for (let k = ca.index; k >= cb.index + 1; k--) seq.push(points[k]);
+    }
+    seq.push(cb.point);
+    return seq;
   }
 
   _cables() {

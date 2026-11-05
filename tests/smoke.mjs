@@ -550,6 +550,42 @@ async function main() {
       const expected = S.terminalsForModel(S.getModel(d.modelId)).length;
       return { expected, dots: document.querySelectorAll('#devices .terminal-dot').length };
     });
+    const multiChannel = await page.evaluate(() => {
+      const S = window.BolidGrid;
+      const st = S.store;
+      const saved = JSON.stringify(st.project);
+      const wall = { id: 'wm', name: 'Тест сети', width: 4000, height: 2600 };
+      const mk = (x, y, tag) => ({ id: 'dm' + tag, modelId: 'sp2', wallId: 'wm', x, y, rot: 0, tag, address: '', note: '' });
+      st.replaceProject({
+        walls: [wall],
+        devices: [mk(600, 1850, '1.1'), mk(2600, 1850, '1.2')],
+        channels: [
+          { id: 'cm1', wallId: 'wm', kind: 'dkc', width: 100, points: [[800, 600], [800, 2000]], color: '#f8fafc' },
+          { id: 'cm2', wallId: 'wm', kind: 'dkc', width: 100, points: [[800, 2000], [3600, 2000]], color: '#f8fafc' },
+        ],
+        dimensions: [], connections: [],
+      });
+      const [a, b] = st.project.devices;
+      const conn = st.addConnection({ deviceId: a.id, terminalId: 't1' }, { deviceId: b.id, terminalId: 't1' });
+      const route = S.editor.routeConnection(conn);
+      const segs = route.points.slice(1).map((p, i) => [p[0] - route.points[i][0], p[1] - route.points[i][1]]);
+      const out = {
+        points: route.points.length,
+        inChannel: route.inChannel,
+        length: Math.round(route.length),
+        vertical: segs.some(([dx, dy]) => Math.abs(dx) < 1 && Math.abs(dy) > 10),
+        horizontal: segs.some(([dx, dy]) => Math.abs(dy) < 1 && Math.abs(dx) > 10),
+        junction: route.points.some(([x, y]) => Math.abs(x - 800) < 2 && Math.abs(y - 2000) < 2),
+      };
+      st.replaceProject(JSON.parse(saved));
+      return out;
+    });
+    check(
+      'кабель проходит по нескольким коробам (горизонталь + вертикаль через угол)',
+      multiChannel.inChannel && multiChannel.vertical && multiChannel.horizontal && multiChannel.junction && multiChannel.points >= 5,
+      JSON.stringify(multiChannel)
+    );
+
     check('у выбранного прибора показаны его клеммы', terminalsVisible.dots === terminalsVisible.expected && terminalsVisible.expected > 0, JSON.stringify(terminalsVisible));
 
     // --- ведомость коробов ---
