@@ -343,6 +343,12 @@ export const MODELS = [
     vendor: 'ЗАО НВП «БОЛИД»',
   }),
   M({
+    id: 'pritok_kop', kind: 'ppkup', symbol: 'block', tagText: 'КОП', terminals: 4, w: 197, h: 162,
+    name: 'Приток-А-КОП', model: 'Приток-А-КОП-01',
+    full: 'Контроллер охранно-пожарный «Приток-А-КОП-01» (Ethernet+GSM, 5 ШС)',
+    vendor: 'ООО ОБ «СОКРАТ», г. Иркутск',
+  }),
+  M({
     id: 'custom', kind: 'other', symbol: 'generic', w: 150, h: 150,
     name: 'Прочее устройство', model: '—',
     full: 'Прочее устройство (размеры и наименование задаются в свойствах)',
