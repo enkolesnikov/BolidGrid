@@ -736,3 +736,10 @@ body.tool-cable #stage{cursor:crosshair}
 .pal-filter{border:1px solid var(--line);background:#111a22;color:#a9bccd;border-radius:999px;padding:3px 9px;font-size:11.5px;cursor:pointer;line-height:1.4}
 .pal-filter:hover{border-color:#5c7288;color:#e6eef8}
 .pal-filter.active{background:#0b3a63;border-color:#2b7fc4;color:#e8f4ff}
+
+/* группы приборов: цвет тонкой обводки и каталог */
+.dev-group-frame{pointer-events:none;opacity:.9}
+.sys-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;flex:0 0 auto}
+.pal-group-title{display:flex;align-items:center}
+.sys-note{color:#5f7c98;font-size:10.5px;font-weight:400;margin-left:6px}
+.badge .sys-dot{width:7px;height:7px;margin-right:4px}

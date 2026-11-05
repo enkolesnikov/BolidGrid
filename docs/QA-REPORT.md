@@ -10,10 +10,10 @@
 
 | Прогон | Результат |
 |---|---|
-| `npm test` | **94/94 PASS** |
+| `npm test` | **97/97 PASS** |
 | `npm run test:qa` | **167/167 PASS** |
 | `npm run test:mobile` | **123/123 PASS** |
-| Всего | **384/384 PASS** |
+| Всего | **387/387 PASS** |
 
 Во всех прогонах не зафиксированы `pageerror` и `console.error`.
 

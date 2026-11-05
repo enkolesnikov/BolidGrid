@@ -4,7 +4,7 @@
  * Проект целиком сериализуется в JSON: undo — это снимки проекта,
  * поэтому любые правки должны идти через begin()/commit() или act().
  */
-import { getModel, MODELS, CHANNEL_KINDS, CHANNEL_KIND_IDS, terminalsForModel, CABLE_BY_ID, defaultCableForTerminals } from './catalog.js';
+import { getModel, MODELS, CHANNEL_KINDS, CHANNEL_KIND_IDS, terminalsForModel, CABLE_BY_ID, defaultCableForTerminals, SYSTEM_ORDER } from './catalog.js';
 import { uid, closestOnPolyline, polylineLength, clamp } from './util.js';
 
 const MODELS_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
@@ -41,6 +41,7 @@ export class Store {
     this.selection = [];
     this.tool = 'select';
     this.armedModelId = null;
+    this.placeSystem = null;
     this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8', selectionDims: true, smartSnap: true };
     this._undo = [];
     this._redo = [];
@@ -306,6 +307,7 @@ export class Store {
         tag: this.nextTag(wall.id),
         address: '',
         note: '',
+        system: patch.system || this.placeSystem || model.system || 'other',
         ...patch,
       };
       this.project.devices.push(dev);
@@ -781,6 +783,7 @@ export function sanitizeProject(raw) {
         x: clamp(Math.round(+d.x || 0), 0, Math.max(0, wall.width - model.w)),
         y: clamp(Math.round(+d.y || 0), 0, Math.max(0, wall.height - model.h)),
         rot: [0, 90, 180, 270].includes(+d.rot) ? +d.rot : 0,
+        system: SYSTEM_ORDER.includes(String(d.system)) ? String(d.system) : (model.system || 'other'),
         tag: String(d.tag ?? ''),
         address: String(d.address ?? ''),
         note: String(d.note ?? ''),

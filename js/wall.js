@@ -7,7 +7,7 @@
  * Инструменты: выбор (перетаскивание, рамка), короб (ломаная),
  * панорама, измерение. Опуски к каналам считаются автоматически.
  */
-import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS, terminalsForModel, TERMINAL_KIND_COLORS, TERMINAL_KIND_LABELS, CABLE_BY_ID } from './catalog.js';
+import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS, terminalsForModel, TERMINAL_KIND_COLORS, TERMINAL_KIND_LABELS, CABLE_BY_ID, SYSTEM_COLORS } from './catalog.js';
 import { clamp, snapTo, fmt, fmt0, m, mm, esc, pathD, closestOnPolyline, closestOnSegment, orthoPath, uid } from './util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -1349,7 +1349,11 @@ export class WallEditor {
       // минимальная зона попадания 60×60 мм — чтобы маленькие модули (МПН и т.п.) можно было выбрать мышью
       const padX = Math.max(16, (60 - model.w) / 2);
       const padY = Math.max(16, (60 - model.h) / 2);
+      const system = d.system || model.system || 'other';
+      const groupColor = SYSTEM_COLORS[system] || '#94a3b8';
+      const groupPad = Math.max(6, Math.min(18, Math.min(model.w, model.h) * 0.06));
       out += `<g class="dev${sel}${issue}" data-type="device" data-id="${d.id}" transform="translate(${d.x} ${yScreen})">
+        <rect class="dev-group-frame" x="${-groupPad}" y="${-groupPad}" width="${model.w + groupPad * 2}" height="${model.h + groupPad * 2}" rx="${Math.max(4, groupPad * 0.6)}" fill="none" stroke="${groupColor}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
         <g transform="rotate(${rot} ${model.w / 2} ${model.h / 2})">
           <g class="dev-symbol">${symbolMarkup(model)}</g>
           <rect class="dev-hit" x="${-padX}" y="${-padY}" width="${model.w + padX * 2}" height="${model.h + padY * 2}" rx="10"/>

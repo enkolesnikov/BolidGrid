@@ -586,6 +586,35 @@ async function main() {
       JSON.stringify(multiChannel)
     );
 
+    const groups = await page.evaluate(() => {
+      const S = window.BolidGrid;
+      const st = S.store;
+      const d = st.wallDevices[0];
+      const frame = (id) => document.querySelector(`#devices .dev[data-id="${id}"] .dev-group-frame`);
+      const before = {
+        frames: document.querySelectorAll('#devices .dev-group-frame').length,
+        system: d.system,
+        stroke: frame(d.id)?.getAttribute('stroke'),
+      };
+      st.updateDevice(d.id, { system: 'security' });
+      S.editor.render();
+      const changed = { system: st.getDevice(d.id).system, stroke: frame(d.id)?.getAttribute('stroke') };
+      st.updateDevice(d.id, { system: before.system });
+      S.editor.render();
+      // фильтр каталога задаёт группу новых приборов
+      st.placeSystem = 'skud';
+      const nd = st.addDevice('sp2', 300, 300);
+      S.editor.render();
+      const inherited = { system: nd.system, stroke: frame(nd.id)?.getAttribute('stroke') };
+      st.removeSelection();
+      st.placeSystem = null;
+      S.editor.render();
+      return { before, changed, inherited };
+    });
+    check('у каждого прибора тонкая обводка по цвету его группы', groups.before.frames >= 6 && groups.before.stroke === '#ef4444', JSON.stringify(groups.before));
+    check('группу прибора можно сменить — обводка меняет цвет', groups.changed.system === 'security' && groups.changed.stroke === '#38bdf8', JSON.stringify(groups.changed));
+    check('новый прибор получает группу из фильтра каталога', groups.inherited.system === 'skud' && groups.inherited.stroke === '#a855f7', JSON.stringify(groups.inherited));
+
     check('у выбранного прибора показаны его клеммы', terminalsVisible.dots === terminalsVisible.expected && terminalsVisible.expected > 0, JSON.stringify(terminalsVisible));
 
     // --- ведомость коробов ---

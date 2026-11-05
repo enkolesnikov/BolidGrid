@@ -2,7 +2,7 @@
  * panels.js — панели интерфейса: каталог устройств, стены, точные свойства,
  * спецификация оборудования и ведомость коробов.
  */
-import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal, SYSTEM_LABELS, SYSTEM_ORDER } from './catalog.js';
+import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal, SYSTEM_LABELS, SYSTEM_ORDER, SYSTEM_COLORS } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
 
 const el = (html) => {
@@ -238,6 +238,7 @@ export class Panels {
         .join('');
       groupsEl.querySelectorAll('[data-sys-filter]').forEach((btn) => btn.addEventListener('click', () => {
         this.systemFilter = btn.dataset.sysFilter;
+        this.store.placeSystem = this.systemFilter === 'all' ? null : this.systemFilter;
         this.renderPalette();
       }));
     }
@@ -250,7 +251,7 @@ export class Panels {
     for (const sys of SYSTEM_ORDER) {
       const models = available.filter((m) => m.system === sys);
       if (!models.length) continue;
-      html += `<div class="pal-group-title">${escAll(SYSTEM_LABELS[sys])}</div>`;
+      html += `<div class="pal-group-title"><span class="sys-dot" style="background:${SYSTEM_COLORS[sys] || '#94a3b8'}"></span>${escAll(SYSTEM_LABELS[sys])}<span class="sys-note">${this.store.placeSystem === sys ? 'новые приборы — в этой группе' : ''}</span></div>`;
       for (const model of models) {
         const placed = counts.get(model.id) || 0;
         const qty = model.specPos != null ? specQty.get(model.specPos) : null;
@@ -332,12 +333,14 @@ export class Panels {
     const xValue = this.anchorX === 'right' ? d.x + model.w : this.anchorX === 'center' ? d.x + model.w / 2 : d.x;
     const yValue = this.anchorY === 'top' ? d.y + model.h : this.anchorY === 'center' ? d.y + model.h / 2 : d.y;
     const horizontalChannels = this.store.wallChannels.filter((c) => c.points.some((p, i) => i && p[1] === c.points[i - 1][1]));
-    return `<div class="prop-title"><span class="badge">${escAll(d.tag || '—')}</span><span class="badge">${escAll(SYSTEM_LABELS[model.system] || '')}</span><h4>${escAll(model.name)}</h4></div>
+    return `<div class="prop-title"><span class="badge">${escAll(d.tag || '—')}</span><span class="badge" style="border-color:${SYSTEM_COLORS[d.system || model.system] || '#94a3b8'}"><span class="sys-dot" style="background:${SYSTEM_COLORS[d.system || model.system] || '#94a3b8'}"></span>${escAll(SYSTEM_LABELS[d.system || model.system] || '')}</span><h4>${escAll(model.name)}</h4></div>
       <div class="form">
         <div class="row2">
           <label>Обозначение<input data-f="tag" value="${escAll(d.tag)}" placeholder="1.1"></label>
           <label>Модель<select data-f="modelId">${modelOptions}</select></label>
         </div>
+        <label>Группа приборов<select data-f="system">${SYSTEM_ORDER.map((sys) => `<option value="${sys}" ${((d.system || model.system) === sys) ? 'selected' : ''}>${escAll(SYSTEM_LABELS[sys])}</option>`).join('')}</select></label>
+        <div class="hintline">Группа задаёт цвет тонкой обводки прибора на листе; для новых приборов берётся из фильтра каталога.</div>
         <section class="prop-section">
           <h5>Точное положение</h5>
           <div class="position-grid">

@@ -50,6 +50,14 @@ export const SYSTEM_LABELS = {
 
 export const SYSTEM_ORDER = ['fire', 'security', 'skud', 'power', 'other'];
 
+export const SYSTEM_COLORS = {
+  fire: '#ef4444',
+  security: '#38bdf8',
+  skud: '#a855f7',
+  power: '#f59e0b',
+  other: '#94a3b8',
+};
+
 export const KIND_ORDER = [
   'ppkup', 'detektor_dym', 'detektor_ruchn', 'opoveshchatel_svet', 'opoveshchatel_zvuk',
   'blok_sp', 'blok_kpb', 'rasshiritel', 'modul', 'bp', 'korobka', 'other',
