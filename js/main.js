@@ -35,7 +35,12 @@ function updateStatus(s) {
   const wall = $('st-wall');
   if (wall) wall.textContent = s.wall || '—';
   const counts = $('st-counts');
-  if (counts) counts.textContent = `приборов: ${s.counts.devices} · коробов: ${s.counts.channels} · размеров: ${s.counts.dims || 0}`;
+  if (counts) {
+    // Размеры считаем только по активной стене — как приборы и короба.
+    const wallId = store.wall?.id;
+    const dims = wallId ? (store.project.dimensions || []).filter((d) => d.wallId === wallId).length : 0;
+    counts.textContent = `приборов: ${s.counts.devices} · коробов: ${s.counts.channels} · размеров: ${dims}`;
+  }
 }
 
 /* статус автосохранения */
@@ -74,6 +79,15 @@ function updatePlacementStatus() {
 $('st-check')?.addEventListener('click', () => panels.openIssuesDialog());
 
 /* ================== уведомления / тосты ================== */
+// Ошибки объявляются настойчиво, обычные подсказки — вежливо.
+const toastEl = $('toast');
+if (toastEl) {
+  new MutationObserver(() => {
+    const isError = toastEl.classList.contains('err');
+    toastEl.setAttribute('role', isError ? 'alert' : 'status');
+    toastEl.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  }).observe(toastEl, { attributes: true, attributeFilter: ['class'] });
+}
 store.on((type, detail) => {
   if (type === 'toast') panels.toast(detail?.text || '');
   if (type === 'channel-added') {
@@ -119,6 +133,8 @@ store.on((type) => {
     document.body.classList.toggle('tool-cable', store.tool === 'cable');
     updateSelectionDock();
     panels.updateToolButtons();
+    syncToolA11y();
+    announceTool();
     editor._hint();
     editor.render();
   } else if (type === 'spec') {
@@ -254,17 +270,24 @@ function updateSelectionDock() {
   const showDock = total > 0 && store.tool === 'select';
   dock.hidden = !showDock;
   document.body.classList.toggle('has-selection', showDock);
-  if (!showDock) return;
+  if (!showDock) {
+    if (!total) announce('Выделение снято');
+    return;
+  }
   if (devices.length === 1 && total === 1) {
     const d = devices[0];
-    $('dock-title').textContent = getModel(d.modelId).name;
+    const name = getModel(d.modelId).name;
+    $('dock-title').textContent = name;
     $('dock-position').textContent = `X ${Math.round(d.x)} · низ ${Math.round(d.y)} мм`;
+    announce(`Выбран прибор: ${name}`);
   } else if (channels.length === 1 && total === 1) {
     $('dock-title').textContent = 'Выбран короб';
     $('dock-position').textContent = `Длина ${(store.channelLength(channels[0]) / 1000).toFixed(2)} м`;
+    announce('Выбран короб');
   } else {
     $('dock-title').textContent = `Выбрано: ${total}`;
     $('dock-position').textContent = devices.length > 1 ? 'Доступно выравнивание' : 'Откройте свойства для редактирования';
+    announce(`Выбрано объектов: ${total}`);
   }
 }
 
@@ -277,7 +300,14 @@ const menuSheet = $('menu-sheet');
 const barButtons = [...document.querySelectorAll('#mobile-bar button')];
 
 function updateBar(active) {
-  for (const b of barButtons) b.classList.toggle('active', b.dataset.sheet === active);
+  for (const b of barButtons) {
+    const on = b.dataset.sheet === active;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-expanded', String(on));
+  }
+  for (const id of ['mobile-menu-btn', 'desktop-menu-btn']) {
+    $(id)?.setAttribute('aria-expanded', String(active === 'menu'));
+  }
 }
 
 function renderMenuWalls() {
@@ -295,22 +325,141 @@ function renderMenuWalls() {
     .join('');
 }
 
-function closeSheets() {
+/* ================= доступность: фокус и слои ================= */
+const FOCUSABLE_SELECTOR =
+  'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])';
+
+function focusableWithin(root) {
+  if (!root) return [];
+  return [...root.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+    (node) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden'
+  );
+}
+
+function trapFocus(event, root) {
+  if (event.key !== 'Tab' || !root) return false;
+  const items = focusableWithin(root);
+  if (!items.length) {
+    event.preventDefault();
+    root.focus?.();
+    return true;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (!root.contains(active)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+    return true;
+  }
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+    return true;
+  }
+  if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  return false;
+}
+
+let sheetTrigger = null;
+let lastAnnouncement = '';
+let announcementToken = 0;
+
+/** Озвучивание изменений для скринридера — без повторов одного и того же текста. */
+function announce(text) {
+  const box = $('sr-status');
+  if (!box || !text || text === lastAnnouncement) return;
+  lastAnnouncement = text;
+  const token = ++announcementToken;
+  box.textContent = '';
+  setTimeout(() => {
+    if (box.isConnected && token === announcementToken) box.textContent = text;
+  }, 30);
+}
+
+function currentSheet() {
+  if (bodyEl.classList.contains('sheet-menu')) return 'menu';
+  if (bodyEl.classList.contains('sheet-palette')) return 'palette';
+  if (bodyEl.classList.contains('sheet-right')) return 'right';
+  return null;
+}
+
+function sheetRoot(name = currentSheet()) {
+  if (!name) return null;
+  if (name === 'menu') return menuSheet;
+  if (name === 'palette') return $('left');
+  // props / spec / journal — все живут в правой шторке.
+  return $('right');
+}
+
+/** Закрытые шторки на телефоне уезжают за экран, но остаются в DOM: убираем их из фокуса и дерева доступности. */
+function syncSheetA11y() {
+  const open = currentSheet();
+  const mobile = isMobile();
+  const left = $('left');
+  const right = $('right');
+  if (left) left.toggleAttribute('inert', mobile && open !== 'palette');
+  if (right) right.toggleAttribute('inert', mobile && open !== 'right');
+  if (menuSheet) {
+    const closed = open !== 'menu';
+    // Не полагаемся на CSS-хак меню: hidden должен реально скрывать слой,
+    // в том числе после общего правила [hidden]{display:none!important}.
+    menuSheet.hidden = closed;
+    menuSheet.toggleAttribute('inert', closed);
+    menuSheet.setAttribute('aria-hidden', closed ? 'true' : 'false');
+  }
+  if (scrim) scrim.hidden = !open;
+}
+
+function closeSheets({ restoreFocus = true } = {}) {
+  const wasOpen = !!currentSheet();
   bodyEl.classList.remove('sheet-palette', 'sheet-right', 'sheet-menu');
   if (scrim) scrim.hidden = true;
   updateBar(null);
+  syncSheetA11y();
+  if (wasOpen && restoreFocus) {
+    const trigger = sheetTrigger;
+    sheetTrigger = null;
+    if (trigger?.isConnected && !trigger.closest('[inert]')) trigger.focus();
+  } else if (!wasOpen) {
+    sheetTrigger = null;
+  }
 }
 
-function openSheet(name) {
-  closeSheets();
+function openSheet(name, trigger = null) {
+  const wasOpen = !!currentSheet();
+  const opener = trigger || (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  closeSheets({ restoreFocus: false });
+  if (!wasOpen || !sheetTrigger) sheetTrigger = opener;
   if (name === 'palette') bodyEl.classList.add('sheet-palette');
-  else if (name === 'menu') bodyEl.classList.add('sheet-menu');
-  else {
+  else if (name === 'menu') {
+    updateHistoryButtons();
+    bodyEl.classList.add('sheet-menu');
+  } else {
     panels.setTab(name);
     bodyEl.classList.add('sheet-right');
+    syncTabsA11y();
   }
   if (scrim) scrim.hidden = false;
   updateBar(name);
+  syncSheetA11y();
+  const focusSheet = () => {
+    const root = sheetRoot(name);
+    const target = root?.querySelector('.sheet-head [data-sheet-close]') || focusableWithin(root)[0];
+    target?.focus();
+  };
+  if (isMobile() || name === 'menu') {
+    focusSheet();
+    // Тап по кнопке может вернуть ей фокус уже после обработчика click — повторяем,
+    // если фокус остался на инициаторе или на body.
+    setTimeout(() => {
+      if (document.activeElement === opener || document.activeElement === document.body) focusSheet();
+    }, 140);
+  }
 }
 
 for (const b of barButtons) {
@@ -321,19 +470,19 @@ for (const b of barButtons) {
         ? bodyEl.classList.contains('sheet-palette')
         : bodyEl.classList.contains('sheet-right') && panels.activeTab === name;
     if (open) closeSheets();
-    else openSheet(name);
+    else openSheet(name, b);
   });
 }
 
 for (const id of ['mobile-menu-btn', 'desktop-menu-btn']) {
-  $(id)?.addEventListener('click', () => {
+  $(id)?.addEventListener('click', (e) => {
     if (bodyEl.classList.contains('sheet-menu')) closeSheets();
-    else openSheet('menu');
+    else openSheet('menu', e.currentTarget);
   });
 }
-$('dock-edit')?.addEventListener('click', () => openSheet('props'));
+$('dock-edit')?.addEventListener('click', (e) => openSheet('props', e.currentTarget));
 $('btn-add-device')?.addEventListener('click', () => {
-  if (isMobile()) openSheet('palette');
+  if (isMobile()) openSheet('palette', $('btn-add-device'));
   else {
     $('palette-search')?.focus();
     panels.toast('Выберите модель в каталоге слева');
@@ -367,7 +516,118 @@ $('palette-list')?.addEventListener('click', (e) => {
 for (const b of document.querySelectorAll('#tabs button')) {
   b.addEventListener('click', () => updateBar(b.dataset.tab));
 }
-MOBILE_MQ.addEventListener?.('change', closeSheets);
+MOBILE_MQ.addEventListener?.('change', () => {
+  closeSheets({ restoreFocus: false });
+  syncSheetA11y();
+});
+
+/* ================= доступность: вкладки, инструменты, стены ================= */
+function syncTabsA11y() {
+  const tabs = [...document.querySelectorAll('#tabs [data-tab]')];
+  for (const b of tabs) {
+    const tab = b.dataset.tab;
+    const selected = tab === panels.activeTab;
+    b.setAttribute('aria-selected', String(selected));
+    b.setAttribute('aria-controls', `tab-${tab}`);
+    b.tabIndex = selected ? 0 : -1;
+    const panel = $(`tab-${tab}`);
+    if (panel) {
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', b.id || `tab-btn-${tab}`);
+    }
+  }
+}
+
+function moveTab(event) {
+  const tabs = [...document.querySelectorAll('#tabs [data-tab]')];
+  if (tabs.length < 2) return;
+  const index = tabs.indexOf(event.currentTarget);
+  if (index < 0) return;
+  let next = null;
+  if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  if (next == null) return;
+  event.preventDefault();
+  event.stopPropagation();
+  panels.setTab(tabs[next].dataset.tab);
+  updateBar(tabs[next].dataset.tab);
+  syncTabsA11y();
+  tabs[next].focus();
+}
+
+for (const b of document.querySelectorAll('#tabs [data-tab]')) {
+  b.addEventListener('click', () => syncTabsA11y());
+  b.addEventListener('keydown', moveTab);
+}
+
+const TOOL_NAMES = {
+  select: 'Выбор',
+  place: 'Размещение',
+  channel: 'Короб',
+  cable: 'Связь',
+  dimension: 'Размер',
+  pan: 'Панорама',
+};
+
+function announceTool() {
+  announce(`Инструмент: ${TOOL_NAMES[store.tool] || store.tool}`);
+}
+
+function syncToolA11y() {
+  for (const b of document.querySelectorAll('#stage-toolbar [data-tool]')) {
+    b.setAttribute('aria-pressed', String(b.dataset.tool === store.tool));
+  }
+}
+
+function syncWallTabsA11y() {
+  const box = $('wall-tabs');
+  if (!box) return;
+  const tabs = [...box.querySelectorAll('[data-wall-id]')];
+  tabs.forEach((b, i) => {
+    b.id = `wall-tab-${i}`;
+    b.setAttribute('role', 'tab');
+    const selected = b.classList.contains('active');
+    b.setAttribute('aria-selected', String(selected));
+    b.setAttribute('aria-controls', 'canvas-wrap');
+    b.tabIndex = selected ? 0 : -1;
+  });
+  const active = tabs.find((b) => b.classList.contains('active'));
+  const panel = $('canvas-wrap');
+  if (panel) {
+    panel.setAttribute('role', 'tabpanel');
+    if (active) panel.setAttribute('aria-labelledby', active.id);
+    panel.setAttribute('aria-label', active ? `Лист стены: ${active.textContent.trim()}` : 'Лист стены');
+  }
+}
+
+const wallTabsBox = $('wall-tabs');
+if (wallTabsBox) {
+  new MutationObserver(() => syncWallTabsA11y()).observe(wallTabsBox, { childList: true });
+  wallTabsBox.addEventListener('click', () => setTimeout(syncWallTabsA11y, 0));
+  wallTabsBox.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...wallTabsBox.querySelectorAll('[data-wall-id]')];
+    if (tabs.length < 2) return;
+    const index = tabs.indexOf(event.target.closest('[data-wall-id]'));
+    if (index < 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    store.setActiveWall(tabs[next].dataset.wallId);
+    editor.fit();
+    requestAnimationFrame(() => {
+      const fresh = [...wallTabsBox.querySelectorAll('[data-wall-id]')][next];
+      fresh?.focus();
+      syncWallTabsA11y();
+    });
+  });
+}
 
 /* ================== инструменты ================== */
 for (const b of document.querySelectorAll('#stage-toolbar [data-tool]')) {
@@ -485,10 +745,14 @@ for (const id of ['sel-labels', 'sel-labels-mobile']) {
 
 /* доступность кнопок истории */
 function updateHistoryButtons() {
-  const undo = document.querySelector('[data-action="undo"]');
-  const redo = document.querySelector('[data-action="redo"]');
-  if (undo) undo.disabled = !store.canUndo;
-  if (redo) redo.disabled = !store.canRedo;
+  for (const button of document.querySelectorAll('[data-action="undo"], [data-menu-action="undo"]')) {
+    button.disabled = !store.canUndo;
+    button.setAttribute('aria-disabled', String(!store.canUndo));
+  }
+  for (const button of document.querySelectorAll('[data-action="redo"], [data-menu-action="redo"]')) {
+    button.disabled = !store.canRedo;
+    button.setAttribute('aria-disabled', String(!store.canRedo));
+  }
 }
 
 $('btn-zoom-in')?.addEventListener('click', () => editor.zoomBy(1.25));
@@ -542,8 +806,12 @@ function syncPaletteClear() {
 paletteSearchInput?.addEventListener('input', syncPaletteClear);
 paletteSearchInput?.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    paletteSearchInput.value = '';
-    paletteSearchInput.dispatchEvent(new Event('input'));
+    if (paletteSearchInput.value) {
+      paletteSearchInput.value = '';
+      paletteSearchInput.dispatchEvent(new Event('input'));
+    } else if (isMobile() && currentSheet()) {
+      closeSheets();
+    }
     e.preventDefault();
   } else if (e.key === 'ArrowDown') {
     const first = document.querySelector('#palette-list .pal-item');
@@ -595,10 +863,36 @@ document.addEventListener('click', (e) => {
 
 /* ================== клавиатура ================== */
 window.addEventListener('keydown', (e) => {
+  const modalEl = $('modal');
+  if (modalEl && !modalEl.hidden) {
+    // Диалог — верхний слой: фокус не уходит в фон, глобальные шорткаты молчат.
+    if (e.key === 'Tab') trapFocus(e, modalEl.querySelector('.modal'));
+    return;
+  }
+
+  const sheet = currentSheet();
+  if (sheet && (isMobile() || sheet === 'menu') && e.key === 'Tab') {
+    if (trapFocus(e, sheetRoot(sheet))) return;
+  }
+
   const t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  const typing = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable));
+  if (typing) {
+    // Esc в поле шторки закрывает шторку; поиск сначала очищает запрос сам.
+    if (sheet && e.key === 'Escape' && t !== $('palette-search')) {
+      e.preventDefault();
+      closeSheets();
+    }
+    return;
+  }
+  if (sheet && e.key === 'Escape') {
+    e.preventDefault();
+    closeSheets();
+    return;
+  }
+
   const ctrl = e.ctrlKey || e.metaKey;
-  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+  if (e.key === '?' || (e.shiftKey && e.key === '/') || e.key === 'F1') {
     e.preventDefault();
     actions.shortcuts();
   } else if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
@@ -685,6 +979,10 @@ window.addEventListener('afterprint', () => {
   store.ensureActiveWall();
   panels.renderAll();
   panels.updateToolButtons();
+  syncTabsA11y();
+  syncToolA11y();
+  syncWallTabsA11y();
+  syncSheetA11y();
   updateHistoryButtons();
   renderMenuWalls();
   syncLabelsUI();
