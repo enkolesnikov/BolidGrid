@@ -11,7 +11,12 @@ import { getModel, symbolMarkup, CHANNEL_KINDS, KIND_COLORS, terminalsForModel, 
 import { clamp, snapTo, fmt, fmt0, m, mm, esc, pathD, closestOnPolyline, closestOnSegment, orthoPath, uid } from './util.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const SHEET_PAD = 260; // отступ листа в мм для подписей
+const SHEET_PAD = 260; // отступ листа в мм для подписей (экспорт)
+const MIN_VIEW_W = 300; // мм — предел приближения
+const MAX_VIEW_W = 200000; // мм — предел отдаления
+const DRAG_SLOP_TOUCH = 7; // px — палец: меньшее движение считается дрожанием
+const DRAG_SLOP_MOUSE = 3; // px
+export const TOUCH_TAP_RADIUS = 28; // px — радиус попадания пальцем по мелкому прибору
 
 export class WallEditor {
   constructor({ store, svg, hintEl, onStatus }) {
@@ -62,9 +67,10 @@ export class WallEditor {
     return this.wall.height - y;
   }
   get pxPerMm() {
-    const mtx = this.svg.getScreenCTM?.();
-    if (mtx && mtx.a) return mtx.a;
-    return this.svg.clientWidth ? this.svg.clientWidth / this.view.w : 0.2;
+    // Считаем от viewBox, а не от CTM: во время жеста (между _applyZoom и render)
+    // CTM ещё старый, и масштаб получался бы неверным.
+    const w = this.svg.clientWidth;
+    return w && this.view.w ? w / this.view.w : 0.2;
   }
   scheduleRender() {
     if (this._raf) return;
@@ -72,6 +78,22 @@ export class WallEditor {
       this._raf = null;
       this.render();
     });
+  }
+  /**
+   * Живое изменение геометрии без полной перерисовки на каждый touchmove:
+   * не больше одного store.emit('live') на кадр (main.js рисует по нему).
+   */
+  _live() {
+    if (this._liveRaf) return;
+    this._liveRaf = requestAnimationFrame(() => {
+      this._liveRaf = null;
+      this.store.emit('live');
+    });
+  }
+  _cancelLive() {
+    if (!this._liveRaf) return;
+    cancelAnimationFrame(this._liveRaf);
+    this._liveRaf = null;
   }
 
   _capture(e) {
@@ -165,13 +187,40 @@ export class WallEditor {
     if (!this.wall) return;
     const pxW = this.svg.clientWidth || 900;
     const pxH = this.svg.clientHeight || 600;
-    const bbox = this.contentBBox();
-    const scale = Math.min(pxW / bbox.w, pxH / bbox.h) * 0.96;
+    const wall = this.wall;
+    // «Вся стена» — это сам лист, а не экспортный bbox с полями под подписи.
+    // 260 мм полей съедали ~11% ширины на телефоне; оставляем небольшой
+    // экранный отступ под тень/подписи.
+    const margin = Math.max(14, Math.min(18, Math.min(pxW, pxH) * 0.03));
+    const scale = Math.min(
+      Math.max(40, pxW - margin * 2) / Math.max(1, wall.width),
+      Math.max(40, pxH - margin * 2) / Math.max(1, wall.height),
+    );
     this.view.w = pxW / scale;
     this.view.h = pxH / scale;
-    this.view.x = bbox.x + bbox.w / 2 - this.view.w / 2;
-    this.view.y = bbox.y + bbox.h / 2 - this.view.h / 2;
+    this.view.x = wall.width / 2 - this.view.w / 2;
+    this.view.y = wall.height / 2 - this.view.h / 2;
+    // нижняя подсказка перекрывает лист: сдвигаем план вверх в свободную часть,
+    // но оставляем запас сверху под заголовок и не выталкиваем лист за сцену.
+    const hint = this._hintOcclusion();
+    const slack = Math.max(0, (pxH - wall.height * scale) / 2);
+    const shift = Math.min(hint / 2, Math.max(0, slack - 16));
+    if (shift > 0) this.view.y += shift / scale;
+    // В альбомной ориентации над листом остаётся мало места: заголовок
+    // рисуется выше стены и при плотной высоте сцены обрезается на 2–4 px.
+    // Даём дополнительный верхний запас, не меняя масштаб листа.
+    if (pxW > pxH && pxH < 320) this.view.y -= 8 / scale;
     this.render();
+  }
+  /** высота видимой подсказки, перекрывающей низ листа, в px */
+  _hintOcclusion() {
+    const hint = this.hintEl;
+    if (!hint?.getBoundingClientRect) return 0;
+    const hr = hint.getBoundingClientRect();
+    const sr = this.svg.getBoundingClientRect();
+    if (!hr.height || !sr.height) return 0;
+    const overlap = Math.min(sr.bottom, hr.bottom) - Math.max(sr.top, hr.top);
+    return Math.max(0, Math.min(overlap, sr.height * 0.12));
   }
   contentBBox() {
     const wall = this.wall;
@@ -184,11 +233,19 @@ export class WallEditor {
   }
   /** зум без перерисовки (для жестов) — точка под курсором остаётся на месте */
   _applyZoom(clientX, clientY, factor) {
-    const [sx, sy] = this.clientToSvg(clientX, clientY);
-    const fx = (sx - this.view.x) / this.view.w;
-    const fy = (sy - this.view.y) / this.view.h;
-    const nw = clamp(this.view.w / factor, 300, 200000);
-    const nh = clamp(this.view.h / factor, 200, 100000);
+    // Доли берём от прямоугольника сцены, а не от CTM: во время pinch viewBox
+    // ещё старый (render отложен), и CTM давал бы накопленный сдвиг фокуса.
+    const rect = this.svg.getBoundingClientRect();
+    const fx = rect.width ? (clientX - rect.left) / rect.width : 0.5;
+    const fy = rect.height ? (clientY - rect.top) / rect.height : 0.5;
+    const sx = this.view.x + fx * this.view.w;
+    const sy = this.view.y + fy * this.view.h;
+    const pxW = this.svg.clientWidth || 1;
+    const pxH = this.svg.clientHeight || 1;
+    const nw = clamp(this.view.w / factor, MIN_VIEW_W, MAX_VIEW_W);
+    // Высота — строго из пропорций сцены. Раньше w и h ограничивались
+    // независимо, и на пределе зума лист растягивался по горизонтали.
+    const nh = Math.max(1, (nw * pxH) / pxW);
     this.view.w = nw;
     this.view.h = nh;
     this.view.x = sx - fx * nw;
@@ -241,42 +298,66 @@ export class WallEditor {
     }
   }
 
+  /** мировые (SVG) координаты по клиентским — без CTM, устойчиво к отложенному render */
+  _clientToWorld(clientX, clientY) {
+    const rect = this.svg.getBoundingClientRect();
+    const fx = rect.width ? (clientX - rect.left) / rect.width : 0.5;
+    const fy = rect.height ? (clientY - rect.top) / rect.height : 0.5;
+    return [this.view.x + fx * this.view.w, this.view.y + fy * this.view.h];
+  }
+
   /** два пальца: масштаб + панорама одним движением */
   _beginPinch() {
     this._clearLongPress();
+    this._cancelLive();
     const pts = [...this.pointers.values()].slice(0, 2);
     const [a, b] = pts;
     const mx = (a.clientX + b.clientX) / 2;
     const my = (a.clientY + b.clientY) / 2;
     this.pinch = {
-      dist: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
-      midX: mx,
-      midY: my,
+      dist0: Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)),
+      w0: this.view.w,
+      world: this._clientToWorld(mx, my),
     };
-    // одиночные жесты отменяем, но незавершённую правку положения — фиксируем
-    if (this.drag?.mode === 'device' && this.drag.moving) this.store.commit('перемещение устройств');
-    else this.store._before = null;
+    // одиночные жесты отменяем, но начатую правку положения — фиксируем одним шагом
+    const drag = this.drag;
+    if (drag?.moved) {
+      if (drag.mode === 'device') this.store.commit('перемещение устройств');
+      else if (drag.mode === 'channel-seg' || drag.mode === 'channel-move') this.store.commit('перемещение короба');
+      else this.store.commit('изменение');
+    } else if (this.store._before) {
+      this.store._before = null;
+    }
     this.drag = null;
     this.band = null;
+    this.touchPan = null; // иначе после pinch одиночная панорама «прыгает» со старым origin
+    this.pan = null;
+    this.pressStart = null;
     this.tapDevice = null;
-    this.channelDraft = this.channelDraft || null;
+    this.longPressFired = false;
+    this.svg.classList.remove('panning');
   }
 
   _pinchMove() {
     const pts = [...this.pointers.values()].slice(0, 2);
-    if (pts.length < 2) return;
+    if (pts.length < 2 || !this.pinch) return;
     const [a, b] = pts;
     const dist = Math.max(1, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY));
     const mx = (a.clientX + b.clientX) / 2;
     const my = (a.clientY + b.clientY) / 2;
-    const factor = dist / (this.pinch.dist || dist);
-    this._applyZoom(mx, my, factor);
-    const scale = this.pxPerMm || 0.2;
-    this.view.x -= (mx - this.pinch.midX) / scale;
-    this.view.y -= (my - this.pinch.midY) / scale;
-    this.pinch.dist = dist;
-    this.pinch.midX = mx;
-    this.pinch.midY = my;
+    const pxW = this.svg.clientWidth || 1;
+    const pxH = this.svg.clientHeight || 1;
+    // Абсолютная привязка к начальной точке: порядок доставки pointermove для двух
+    // пальцев бывает асимметричным, и инкрементальный pan накапливал сдвиг фокуса.
+    const nw = clamp((this.pinch.w0 * this.pinch.dist0) / dist, MIN_VIEW_W, MAX_VIEW_W);
+    const nh = Math.max(1, (nw * pxH) / pxW);
+    const rect = this.svg.getBoundingClientRect();
+    const fx = rect.width ? (mx - rect.left) / rect.width : 0.5;
+    const fy = rect.height ? (my - rect.top) / rect.height : 0.5;
+    this.view.w = nw;
+    this.view.h = nh;
+    this.view.x = this.pinch.world[0] - fx * nw;
+    this.view.y = this.pinch.world[1] - fy * nh;
     this.scheduleRender();
   }
 
@@ -284,7 +365,7 @@ export class WallEditor {
    * Ближайшее устройство/канал в пределах maxPx от точки — для попадания пальцем
    * по мелким элементам на маленьком экране.
    */
-  _findNearTarget(floor, maxPx = 30) {
+  _findNearTarget(floor, maxPx = TOUCH_TAP_RADIUS) {
     const tol = maxPx / (this.pxPerMm || 0.2);
     let best = null;
     for (const d of this.store.wallDevices) {
@@ -362,7 +443,18 @@ export class WallEditor {
 
   _onPointerDown(e) {
     this.svg.focus?.();
-    this.pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    const now = performance.now();
+    // Защита от «залипшего» пальца: если предыдующий pointerup потерялся
+    // (например, под пальцем открылась шторка свойств), старый pointerId не должен
+    // превращать следующий тап в pinch.
+    for (const [id, p] of this.pointers) {
+      const held = this.svg.hasPointerCapture?.(id);
+      if (!held && now - (p.at || 0) > 1500) this.pointers.delete(id);
+    }
+    this.pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY, at: now });
+    // Захватываем указатель на самом SVG: часть обработчиков меняет selection
+    // и перерисовывает innerHTML, и без capture pointerup уходил бы другому узлу.
+    this._capture(e);
     if (this.pointers.size === 2) {
       this._beginPinch();
       return;
@@ -375,11 +467,13 @@ export class WallEditor {
       return;
     }
     if (e.button !== 0) return;
+    const touch = e.pointerType !== 'mouse';
     let info = this._targetInfo(e);
     const floor = this.screenToFloor(e);
-    if (!info) info = this._findNearDimension(floor, 14);
-    if (!info) info = this._findNearHandle(floor, 14);
-    if (!info && e.pointerType !== 'mouse') info = this._findNearTarget(floor, 30);
+    // на пальце допуски шире: тонкую линию размера/вершину иначе не поймать
+    if (!info) info = this._findNearDimension(floor, touch ? 22 : 14);
+    if (!info) info = this._findNearHandle(floor, touch ? 20 : 14);
+    if (!info && touch) info = this._findNearTarget(floor, TOUCH_TAP_RADIUS);
     this.pressStart = { x: e.clientX, y: e.clientY };
 
     if (this.tool === 'place' && this.store.armedModelId) {
@@ -425,7 +519,7 @@ export class WallEditor {
     if (info) {
       const touch = e.pointerType !== 'mouse';
       if (info.type === 'vertex') {
-        this.drag = { mode: 'vertex', channelId: info.id, index: info.index };
+        this.drag = { mode: 'vertex', channelId: info.id, index: info.index, points0: (this.store.getChannel(info.id)?.points || []).map((p) => [...p]) };
         this.store.begin();
         this._capture(e);
         return;
@@ -456,15 +550,16 @@ export class WallEditor {
         const ch = this.store.getChannel(info.id);
         if (!ch) return;
         if (!this.store.isSelected('channel', ch.id)) this.store.select([{ type: 'channel', id: ch.id }]);
-        this.store.begin();
         this.drag = {
           mode: 'channel-seg',
           channelId: ch.id,
           index: +info.index,
           start: floor,
+          startClient: [e.clientX, e.clientY],
           points0: ch.points.map((p) => [...p]),
           whole: e.shiftKey || e.ctrlKey || e.metaKey,
           moved: false,
+          began: false,
         };
         if (this.drag.whole) this.drag.mode = 'channel-move';
         if (e.pointerType !== 'mouse') this._startChannelLongPress(e, ch.id);
@@ -489,19 +584,21 @@ export class WallEditor {
         else this._startLongPress(e, info, 'toggle');
       }
 
-      this.store.begin();
       const origins = this.store.selectedDevices().map((d) => ({ id: d.id, x: d.x, y: d.y, wallId: d.wallId }));
       const dev = this.store.getDevice(info.id);
       if (touch && !already && dev && !origins.some((o) => o.id === dev.id)) {
         origins.push({ id: dev.id, x: dev.x, y: dev.y, wallId: dev.wallId });
       }
+      // begin() выполнится только при реальном начале перетаскивания: тап — не шаг истории
       this.drag = {
         mode: 'device',
         primaryId: info.id,
         start: floor,
+        startClient: [e.clientX, e.clientY],
         moving: false,
         origins,
         touchNew: touch && !already,
+        began: false,
       };
       this._capture(e);
       this.render();
@@ -519,7 +616,7 @@ export class WallEditor {
   }
 
   _onPointerMove(e) {
-    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY, at: performance.now() });
     if (this.pinch && this.pointers.size >= 2) {
       this._pinchMove();
       return;
@@ -549,17 +646,20 @@ export class WallEditor {
       return;
     }
     if (this.drag?.mode === 'device') {
-      const dx = floor[0] - this.drag.start[0];
-      const dy = floor[1] - this.drag.start[1];
-      if (!this.drag.moving && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-        this.drag.moving = true;
+      const d = this.drag;
+      const dx = floor[0] - d.start[0];
+      const dy = floor[1] - d.start[1];
+      // порог — в экранных пикселях, иначе дрожание пальца (3 мм) уже двигало прибор
+      const slop = e.pointerType === 'mouse' ? DRAG_SLOP_MOUSE : DRAG_SLOP_TOUCH;
+      if (!d.moving && Math.hypot(e.clientX - d.startClient[0], e.clientY - d.startClient[1]) > slop) {
+        d.moving = true;
         this._clearLongPress();
-        if (this.drag.touchNew) {
-          this.drag.touchNew = false;
-          this.store.select([{ type: 'device', id: this.drag.primaryId }]);
+        if (d.touchNew) {
+          d.touchNew = false;
+          this.store.select([{ type: 'device', id: d.primaryId }]);
         }
       }
-      if (this.drag.moving) this._moveDevices(dx, dy);
+      if (d.moving) this._moveDevices(dx, dy);
       return;
     }
     if (this.drag?.mode === 'vertex') {
@@ -568,7 +668,7 @@ export class WallEditor {
         const pts = ch.points.slice();
         pts[this.drag.index] = this._constrainVertex(pts, this.drag.index, floor);
         ch.points = pts;
-        this.store.emit('live');
+        this._live();
       }
       return;
     }
@@ -576,18 +676,23 @@ export class WallEditor {
       const d = this.drag;
       const ch = this.store.getChannel(d.channelId);
       if (!ch) return;
-      const dxPx = floor[0] - d.start[0];
-      const dyPx = floor[1] - d.start[1];
-      if (!d.moved && Math.hypot(dxPx, dyPx) > 4) d.moved = true;
+      const dxMm = floor[0] - d.start[0];
+      const dyMm = floor[1] - d.start[1];
+      const slop = e.pointerType === 'mouse' ? DRAG_SLOP_MOUSE : DRAG_SLOP_TOUCH;
+      if (!d.moved && Math.hypot(e.clientX - d.startClient[0], e.clientY - d.startClient[1]) > slop) d.moved = true;
       if (!d.moved) return;
+      if (!d.began) {
+        this.store.begin();
+        d.began = true;
+      }
       const W = this.wall.width;
       const H = this.wall.height;
       const grid = this.grid;
       if (d.mode === 'channel-move') {
         const xs = d.points0.map((p) => p[0]);
         const ys = d.points0.map((p) => p[1]);
-        let dx = this.snapOn() ? Math.round(dxPx / grid) * grid : dxPx;
-        let dy = this.snapOn() ? Math.round(dyPx / grid) * grid : dyPx;
+        let dx = this.snapOn() ? Math.round(dxMm / grid) * grid : dxMm;
+        let dy = this.snapOn() ? Math.round(dyMm / grid) * grid : dyMm;
         dx = clamp(dx, -Math.min(...xs), W - Math.max(...xs));
         dy = clamp(dy, -Math.min(...ys), H - Math.max(...ys));
         ch.points = d.points0.map(([x, y]) => [x + dx, y + dy]);
@@ -601,20 +706,20 @@ export class WallEditor {
         if (horizontal) {
           while (runStart > 0 && pts0[runStart - 1][1] === pts0[runStart][1]) runStart--;
           while (runEnd < pts0.length - 1 && pts0[runEnd][1] === pts0[runEnd + 1][1]) runEnd++;
-          let dy = this.snapOn() ? Math.round(dyPx / grid) * grid : dyPx;
+          let dy = this.snapOn() ? Math.round(dyMm / grid) * grid : dyMm;
           const baseY = pts0[runStart][1];
           dy = clamp(dy, -baseY, H - baseY);
           ch.points = pts0.map((p, i) => (i >= runStart && i <= runEnd ? [p[0], p[1] + dy] : [...p]));
         } else {
           while (runStart > 0 && pts0[runStart - 1][0] === pts0[runStart][0]) runStart--;
           while (runEnd < pts0.length - 1 && pts0[runEnd][0] === pts0[runEnd + 1][0]) runEnd++;
-          let dx = this.snapOn() ? Math.round(dxPx / grid) * grid : dxPx;
+          let dx = this.snapOn() ? Math.round(dxMm / grid) * grid : dxMm;
           const baseX = pts0[runStart][0];
           dx = clamp(dx, -baseX, W - baseX);
           ch.points = pts0.map((p, i) => (i >= runStart && i <= runEnd ? [p[0] + dx, p[1]] : [...p]));
         }
       }
-      this.store.emit('live');
+      this._live();
       return;
     }
     if (this.drag?.mode === 'dim') {
@@ -653,6 +758,7 @@ export class WallEditor {
 
   _onPointerUp(e) {
     this.pointers.delete(e.pointerId);
+    const cancelled = e.type === 'pointercancel';
     if (this.pinch) {
       if (this.pointers.size < 2) this.pinch = null;
       this.render();
@@ -661,7 +767,7 @@ export class WallEditor {
     if (this.touchPan) {
       const tp = this.touchPan;
       this.touchPan = null;
-      if (!tp.moved) this.store.clearSelection();
+      if (!tp.moved && !cancelled) this.store.clearSelection();
       this.render();
       return;
     }
@@ -672,6 +778,7 @@ export class WallEditor {
       this.render();
       return;
     }
+    this._cancelLive();
     if (this.drag?.mode === 'device') {
       const d = this.drag;
       this.drag = null;
@@ -681,6 +788,21 @@ export class WallEditor {
       this.longPressFired = false;
       this._clearLongPress();
       this.smartGuides = [];
+      if (cancelled) {
+        // pointercancel (браузер забрал жест) — откатываем, а не коммитим
+        if (d.moving) {
+          for (const o of d.origins) {
+            const dev = this.store.getDevice(o.id);
+            if (!dev || dev.wallId !== o.wallId) continue;
+            dev.x = o.x;
+            dev.y = o.y;
+          }
+          this.store.emit('live');
+        }
+        this.store._before = null;
+        this.render();
+        return;
+      }
       if (d.moving) this.store.commit('перемещение устройств');
       else this.store._before = null;
       if (!d.moving && tapped && !longPressed) this.store.select([{ type: 'device', id: tapped.id }]);
@@ -688,8 +810,16 @@ export class WallEditor {
       return;
     }
     if (this.drag?.mode === 'vertex') {
+      const d = this.drag;
       this.drag = null;
-      this.store.commit('изменение канала');
+      if (cancelled && d.points0?.length) {
+        const ch = this.store.getChannel(d.channelId);
+        if (ch) ch.points = d.points0;
+        this.store._before = null;
+        this.store.emit('live');
+      } else {
+        this.store.commit('изменение канала');
+      }
       this.render();
       return;
     }
@@ -703,8 +833,16 @@ export class WallEditor {
       const d = this.drag;
       this.drag = null;
       this._clearLongPress();
-      if (d.moved) this.store.commit('перемещение короба');
-      else this.store._before = null;
+      if (cancelled && d.points0) {
+        const ch = this.store.getChannel(d.channelId);
+        if (ch) ch.points = d.points0;
+        this.store._before = null;
+        this.store.emit('live');
+      } else if (d.moved) {
+        this.store.commit('перемещение короба');
+      } else {
+        this.store._before = null;
+      }
       this.render();
       return;
     }
@@ -748,10 +886,16 @@ export class WallEditor {
   _moveDevices(dx, dy) {
     const drag = this.drag;
     if (!drag?.origins) return;
+    if (!drag.began) {
+      this.store.begin();
+      drag.began = true;
+    }
     const primary = drag.origins.find((o) => o.id === drag.primaryId) || drag.origins[0];
     if (!primary) return;
-    let tx = this.snap(primary.x + dx);
-    let ty = this.snap(primary.y + dy);
+    const grid = this.grid;
+    // Привязка по дельте: прибор, стоящий вне сетки, не «прыгает» к ней на первом же пикселе.
+    let tx = this.snapOn() ? primary.x + Math.round(dx / grid) * grid : primary.x + dx;
+    let ty = this.snapOn() ? primary.y + Math.round(dy / grid) * grid : primary.y + dy;
     const primaryModel = getModel(this.store.getDevice(primary.id)?.modelId || 'custom');
     this.smartGuides = [];
 
@@ -792,18 +936,33 @@ export class WallEditor {
     }
 
     const wall = this.wall;
-    tx = clamp(tx, 0, wall.width - primaryModel.w);
-    ty = clamp(ty, 0, wall.height - primaryModel.h);
-    const ddx = tx - primary.x;
-    const ddy = ty - primary.y;
+    let ddx = tx - primary.x;
+    let ddy = ty - primary.y;
+    // Один сдвиг для всей группы: у края стены группа не должна «расползаться»
+    for (const o of drag.origins) {
+      if (o.wallId !== wall.id) continue;
+      const dev = this.store.getDevice(o.id);
+      if (!dev) continue;
+      const model = getModel(dev.modelId);
+      ddx = Math.max(-o.x, Math.min(ddx, wall.width - model.w - o.x));
+      ddy = Math.max(-o.y, Math.min(ddy, wall.height - model.h - o.y));
+    }
+    ddx = Math.round(ddx);
+    ddy = Math.round(ddy);
+    let changed = false;
     for (const o of drag.origins) {
       const d = this.store.getDevice(o.id);
-      if (!d || d.wallId !== this.wall.id) continue;
+      if (!d || d.wallId !== wall.id) continue;
       const model = getModel(d.modelId);
-      d.x = clamp(Math.round(o.x + ddx), 0, wall.width - model.w);
-      d.y = clamp(Math.round(o.y + ddy), 0, wall.height - model.h);
+      const nx = clamp(o.x + ddx, 0, wall.width - model.w);
+      const ny = clamp(o.y + ddy, 0, wall.height - model.h);
+      if (d.x !== nx || d.y !== ny) {
+        d.x = nx;
+        d.y = ny;
+        changed = true;
+      }
     }
-    this.store.emit('live');
+    if (changed) this._live();
   }
 
   _finishBand(band) {
@@ -915,9 +1074,15 @@ export class WallEditor {
   _sheet() {
     const w = this.wall;
     const capY = w.height + 120;
+    // На узкой/низкой сцене мобильная CSS-подпись 230 px налезает на подпись объекта
+    // и выходит за лист. Даём компактный вариант с явными baseline'ами.
+    const compact = (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px)')?.matches) || Math.min(this.svg.clientWidth || 0, this.svg.clientHeight || 0) < 600;
+    const caption = compact
+      ? `<text class="wall-caption" x="0" y="-210" style="font-size:160px">${esc(w.name)}</text>`
+      : `<text class="wall-caption" x="0" y="-150">${esc(w.name)}</text>`;
     return `<rect class="sheet" x="0" y="0" width="${w.width}" height="${w.height}" rx="6"/>
       <line class="ruler-line" x1="0" y1="${w.height}" x2="${w.width}" y2="${w.height}" stroke-width="3"/>
-      <text class="wall-caption" x="0" y="-150">${esc(w.name)}</text>
+      ${caption}
       <text class="wall-sub" x="0" y="-30">${esc(this.store.project.meta?.doc || '')} · стена ${this.store.wallIndex + 1} из ${this.store.project.walls.length} · ${m(w.width)} × ${m(w.height)}</text>
       <!-- размеры -->
       <line class="ruler-line" x1="0" y1="${capY}" x2="${w.width}" y2="${capY}" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
@@ -977,6 +1142,9 @@ export class WallEditor {
   }
 
   _channels() {
+    const ppm = this.pxPerMm || 0.2;
+    // 44 px — минимальная комфортная цель для пальца (AGENTS.md)
+    const touchHit = 44 / ppm;
     let out = '';
     for (const ch of this.store.wallChannels) {
       const def = CHANNEL_KINDS.find((k) => k.id === ch.kind) || CHANNEL_KINDS[0];
@@ -991,10 +1159,10 @@ export class WallEditor {
         <path class="channel-body" d="${d}" stroke-width="${sw}" stroke="${color}"/>
         <path class="channel-inner channel-lid" d="${d}" stroke-width="${Math.max(sw - 8, 2)}"/>
         ${this._channelJoints(ch)}
-        <path class="channel-hit" d="${d}" stroke-width="${Math.max(sw * 2.6, 140)}"/>
+        <path class="channel-hit" d="${d}" stroke-width="${Math.max(sw * 2.6, touchHit)}"/>
         ${ch.points.slice(1).map((pt, i) => {
           const a = ch.points[i];
-          return `<line class="channel-seg-hit" data-type="channel-seg" data-id="${ch.id}" data-index="${i}" x1="${a[0]}" y1="${this.toScreenY(a[1])}" x2="${pt[0]}" y2="${this.toScreenY(pt[1])}" stroke-width="${Math.max(sw + 90, 220)}"/>`;
+          return `<line class="channel-seg-hit" data-type="channel-seg" data-id="${ch.id}" data-index="${i}" x1="${a[0]}" y1="${this.toScreenY(a[1])}" x2="${pt[0]}" y2="${this.toScreenY(pt[1])}" stroke-width="${Math.max(sw + 90, touchHit)}"/>`;
         }).join('')}
       </g>`;
 
@@ -1655,7 +1823,7 @@ export class WallEditor {
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
-    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label')) g.remove();
+    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label, .channel-hit, .channel-seg-hit, .dev-hit, .cable-hit, .terminal-hit')) g.remove();
     for (const g of walker.querySelectorAll('.sel')) g.classList.remove('sel');
     const meta = this.store.project.meta || {};
     const title = `${meta.name || 'BolidGrid'} — ${wall.name}`;
