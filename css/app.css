@@ -1,21 +1,89 @@
 /* BolidGrid — интерфейс редактора расстановки устройств на стене */
 :root{
+  /* ---- поверхности и линии ---- */
   --bg:#111820;
   --bg-2:#182129;
   --panel:#1c2630;
   --panel-2:#24313d;
+  --surface-1:#131c24;
+  --surface-2:#182129;
+  --surface-3:#1c2630;
+  --surface-raised:#222e39;
+  --surface-hover:#26333f;
+  --surface-stage:#10171e;
+  --surface-topbar:#141d25;
+  --input-bg:#131c24;
   --line:#35424e;
   --line-soft:#2a353f;
+  --line-strong:#4a5a68;
+
+  /* ---- текст и акценты ---- */
   --text:#edf2f7;
+  --text-soft:#c3cfd9;
   --muted:#a4b1bd;
+  --muted-2:#8f9fae; /* минимальный «тихий» текст: ≥4.5:1 на панелях */
   --accent:#4b93ff;
   --accent-2:#0064e6;
+  --accent-hover:#1672ef;
+  --accent-contrast:#f4f7fa;
+  --accent-soft:#10375f;
+  --accent-text:#d7e9ff;
   --ok:#34d399;
+  --ok-text:#a7f3d0;
   --warn:#fbbf24;
+  --warn-text:#fde68a;
   --danger:#f87171;
+  --danger-text:#fecaca;
   --violet:#a78bfa;
-  --radius:10px;
+  --focus:#8bbcff;
+  --focus-w:2px;
+  --focus-ring:0 0 0 3px rgba(75,147,255,.32);
+
+  /* ---- типографика ---- */
+  --font-ui:"Inter","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --fs-2xs:10px;
+  --fs-xs:10.5px;
+  --fs-sm:11.5px;
+  --fs-md:12.5px;
+  --fs-base:13px;
+  --fs-lg:14px;
+  --fs-xl:16px;
+  --lh-tight:1.2;
+  --lh-base:1.45;
+  --lh-loose:1.6;
+
+  /* ---- отступы, радиусы, тени ---- */
+  --sp-1:4px;
+  --sp-2:6px;
+  --sp-3:8px;
+  --sp-4:10px;
+  --sp-5:12px;
+  --sp-6:14px;
+  --sp-7:16px;
+  --sp-8:20px;
+  --sp-9:24px;
+  --r-xs:5px;
+  --r-sm:7px;
+  --r-md:8px;
+  --r-lg:12px;
+  --r-xl:16px;
+  --r-pill:999px;
+  --radius:var(--r-md);
+  --shadow-sm:0 2px 8px rgba(0,0,0,.18);
   --shadow:0 12px 32px rgba(0,0,0,.35);
+  --shadow-md:0 12px 32px rgba(0,0,0,.35);
+  --shadow-lg:0 18px 50px rgba(0,0,0,.45);
+  --shadow-up:0 -16px 40px rgba(0,0,0,.55);
+
+  /* ---- состояния, движение, тач ---- */
+  --dur-fast:120ms;
+  --dur:160ms;
+  --dur-slow:240ms;
+  --ctrl-h:36px;
+  --tap:44px;
+  --mobile-bar-h:64px;
+  --safe-bottom:env(safe-area-inset-bottom,0px);
   font-synthesis:none;
 }
 *{box-sizing:border-box}
@@ -223,6 +291,7 @@ aside{min-height:0;display:flex;flex-direction:column;background:var(--bg-2);ove
 .section-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 
 /* tables */
+.table-wrap{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
 .table{width:100%;border-collapse:collapse;font-size:11.5px}
 .table th,.table td{border-bottom:1px solid var(--line-soft);padding:5px 6px;text-align:left;vertical-align:top}
 .table th{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0;background:var(--bg-2)}
@@ -813,3 +882,252 @@ body.tool-cable #stage{cursor:crosshair}
 .shortcuts-grid span{color:#c6d2dc}
 .shortcuts-note{font-size:11.5px;color:#8fa0b0;margin:10px 0 0;line-height:1.55}
 @media(max-width:900px){#st-help{min-width:30px;min-height:30px;font-size:13px}}
+
+/* ============================================================
+   Design system 1.9 — токены, контраст AA, состояния, тач
+   ============================================================ */
+body{background:var(--bg);color:var(--text);font:var(--fs-base)/var(--lh-base) var(--font-ui)}
+/* [hidden] должен реально скрывать; открытое меню проекта — единственное исключение,
+   потому что его атрибут hidden остаётся в разметке, а видимостью управляет body.sheet-menu. */
+[hidden]{display:none!important}
+body.sheet-menu #menu-sheet[hidden]{display:flex!important}
+body.sheet-menu #menu-sheet{flex-direction:column}
+kbd{font:var(--fs-sm)/1.4 var(--font-mono);color:var(--muted);border-color:var(--line)}
+::placeholder{color:var(--muted-2);opacity:1}
+select option{background:var(--input-bg);color:var(--text)}
+
+/* ---- поверхности и базовые контейнеры ---- */
+#topbar{background:var(--surface-topbar);border-bottom-color:var(--line);gap:var(--sp-5);min-height:56px}
+.brand-text b{font-size:15px;letter-spacing:.15px}
+.brand-text span{font-size:var(--fs-xs);color:var(--muted)}
+#stage{background:var(--surface-stage)}
+#stage-toolbar{background:var(--surface-2)}
+#statusbar{background:var(--surface-2);border-top-color:var(--line);color:var(--muted)}
+.tabs{background:var(--surface-2);border-bottom-color:var(--line)}
+.tabpanel{padding:var(--sp-7)}
+.modal{border-color:var(--line);border-radius:var(--r-xl);box-shadow:var(--shadow-lg)}
+.toast{border-radius:var(--r-md);font-size:var(--fs-md);box-shadow:var(--shadow-lg)}
+
+/* ---- панели и заголовки ---- */
+.panel{gap:var(--sp-3);border-bottom-color:var(--line-soft)}
+.panel h2{font-size:11px;letter-spacing:.09em;color:var(--muted);gap:var(--sp-3)}
+.panel h2 .btn{letter-spacing:normal}
+.prop-section h5{font-size:var(--fs-md);color:var(--text-soft)}
+
+/* ---- каталог ---- */
+.pal-group-title{color:#8fa8c6;font-size:var(--fs-2xs);letter-spacing:.09em}
+.pal-group-title .pg-count,.sys-note{color:var(--muted-2)}
+.palette-hint{color:var(--muted-2);line-height:var(--lh-loose)}
+.empty{color:var(--muted-2);font-size:var(--fs-sm);line-height:var(--lh-loose);padding:10px 10px;border:1px dashed var(--line);border-radius:var(--r-md);text-align:center}
+.pal-item{background:var(--surface-1);border-color:var(--line);border-radius:var(--r-md);transition:background-color var(--dur),border-color var(--dur),box-shadow var(--dur)}
+.pal-item:hover{background:#182a43;border-color:var(--line-strong)}
+.pal-item .pname{line-height:1.3;overflow-wrap:anywhere}
+.pal-item .pname small{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.2;margin-top:2px;color:var(--muted)}
+.pal-item .pcount{color:var(--muted);font-size:var(--fs-xs)}
+.pal-item .pcount b{color:#cfe4ff}
+.pal-filter{background:var(--surface-1);border-color:var(--line);color:var(--muted);transition:background-color var(--dur),border-color var(--dur),color var(--dur)}
+.pal-filter:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--text)}
+.pal-filter.active{background:#0b3a63;border-color:#2b7fc4;color:#e8f4ff}
+.group-chip{background:var(--surface-1);border-color:var(--line);color:var(--text-soft)}
+.group-chip:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--text)}
+.search,.meta-grid input,.form input,.form select,.form textarea,.project-field input,.wall-size input,.menu-size input{background:var(--input-bg);border-color:var(--line);border-radius:var(--r-md)}
+.search:focus,.meta-grid input:focus,.form input:focus,.form select:focus,.form textarea:focus,.project-field input:focus{border-color:var(--accent);box-shadow:var(--focus-ring)}
+.search-wrap:focus-within .search{border-color:var(--accent);box-shadow:var(--focus-ring)}
+.position-input:focus-within{border-color:var(--accent);box-shadow:var(--focus-ring)}
+.position-input input:focus-visible{outline:none}
+
+/* ---- стены: имя в две строки вместо «С…» ---- */
+.wall-item{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  grid-template-areas:"name action" "dim action";
+  align-items:center;column-gap:var(--sp-3);row-gap:2px;text-align:left;
+  background:var(--surface-1);border-color:var(--line);border-radius:var(--r-md);
+  transition:background-color var(--dur),border-color var(--dur);
+}
+.wall-item:hover{background:#182a43;border-color:var(--line-strong)}
+.wall-item.active{background:#0f2a3d;border-color:var(--accent);box-shadow:inset 2px 0 0 var(--accent)}
+.wall-item .wname{
+  grid-area:name;min-width:0;white-space:normal;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  line-height:1.28;font-size:var(--fs-md);color:var(--text);
+}
+.wall-item .wdim{grid-area:dim;color:var(--muted-2);font:var(--fs-xs)/1.25 var(--font-mono)}
+.wall-item .wdel{grid-area:action;align-self:center;color:var(--muted-2);border-radius:var(--r-xs);transition:background-color var(--dur),color var(--dur)}
+.wall-item .wdel:hover{color:var(--danger);background:#2a1414}
+.menu-walls .wall-item{width:100%;grid-template-areas:"name dim";grid-template-columns:minmax(0,1fr) auto}
+.menu-walls .wall-item .wname{display:block;white-space:nowrap;text-overflow:ellipsis}
+
+/* ---- кнопки, инструменты, вкладки ---- */
+.btn{background:var(--surface-raised);border-color:var(--line);color:var(--text);border-radius:var(--r-md);transition:background-color var(--dur),border-color var(--dur),color var(--dur),transform var(--dur-fast)}
+.btn:hover{background:var(--surface-hover);border-color:var(--line-strong)}
+.btn:active{transform:translateY(1px)}
+.btn.accent{background:var(--accent-2);border-color:#2679ed;color:var(--accent-contrast)}
+.btn.accent:hover{background:var(--accent-hover);border-color:#3b8af5}
+.btn[disabled],.btn:disabled{
+  opacity:1;background:var(--surface-raised);border-color:var(--line-soft);color:var(--muted-2);
+  cursor:not-allowed;transform:none;
+}
+.btn.accent[disabled],.btn.accent:disabled{background:#173b62;border-color:#24527c;color:#a8bccd}
+input:disabled,select:disabled,textarea:disabled{background:#101820;border-color:var(--line-soft);color:var(--muted-2);opacity:1;cursor:not-allowed}
+.tool{color:var(--text-soft);border-radius:var(--r-md);transition:background-color var(--dur),border-color var(--dur),color var(--dur)}
+.tool:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--text)}
+.tool.active{background:#0b3b78;border-color:#347fd9;color:#f2f7ff}
+.wall-tab{color:var(--muted);border-radius:var(--r-sm);transition:background-color var(--dur),border-color var(--dur),color var(--dur)}
+.wall-tab:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--text)}
+.wall-tab.active{background:#0b3b78;border-color:#347fd9;color:#f2f7ff}
+.tabs button{color:var(--muted);transition:background-color var(--dur),color var(--dur),box-shadow var(--dur)}
+.tabs button:hover{background:var(--surface-hover);color:var(--text)}
+.tabs button.active{background:var(--bg-2);border-color:var(--line);border-bottom-color:var(--bg-2);color:var(--text);box-shadow:inset 0 2px 0 var(--accent)}
+.status-check{color:var(--muted);transition:background-color var(--dur),border-color var(--dur),color var(--dur)}
+.status-check:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--text)}
+.status-help{color:var(--muted);background:var(--surface-3);border-color:var(--line);transition:background-color var(--dur),border-color var(--dur),color var(--dur)}
+.status-help:hover{background:var(--surface-hover);border-color:var(--line-strong);color:var(--text)}
+.wall-item .wdel:focus-visible,.swatch:focus-visible,.pal-item:focus-visible,.pal-filter:focus-visible,.group-chip:focus-visible{outline-offset:2px}
+
+/* ---- единый видимый фокус ---- */
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible,summary:focus-visible,[tabindex]:focus-visible,#wall:focus-visible{
+  outline:var(--focus-w) solid var(--focus);outline-offset:2px;
+}
+.pal-item:focus-visible,.wall-item:focus-visible{outline-offset:-2px}
+
+/* ---- инспектор: заголовок не сталкивается с бейджами ---- */
+.prop-title{flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);margin-bottom:var(--sp-3);align-items:center}
+.prop-title h4{order:-1;flex:1 1 100%;font-size:var(--fs-xl);line-height:1.25;overflow-wrap:anywhere}
+.prop-title .badge{max-width:100%}
+.form label{color:var(--text-soft)}
+.form .row2:has(select){grid-template-columns:minmax(0,1fr)}
+.form .hintline,.position-field>span,.measure-preview,.channel-position-note,.multi-summary,.selection-empty p,.review-intro,.review-empty p,.review-item>span:last-child{color:var(--muted)}
+.terminal-row .muted{color:var(--muted-2)}
+.dock-copy span{color:var(--muted)}
+.save-status{color:var(--muted)}
+#st-hint{color:var(--muted)}
+#canvas-legend{top:auto;bottom:63px;right:12px}
+@media (max-width:1300px){
+  #canvas-legend{max-width:calc(100% - 20px);gap:6px;padding:4px 7px;font-size:10px}
+}
+@media (min-width:1301px) and (max-height:780px){#canvas-legend{display:none!important}}
+@media (min-width:1101px) and (max-width:1300px) and (max-height:740px){#canvas-legend{display:none!important}}
+
+/* ---- таблицы ---- */
+.table th{background:var(--bg-2);color:var(--muted);border-bottom-color:var(--line)}
+.table td{border-bottom-color:var(--line-soft)}
+.table tbody tr:hover td{background:rgba(255,255,255,.025)}
+.table tr.total td{border-top-color:var(--line)}
+
+/* ---- статусбар: подсказка сжимается, а не вылезает ---- */
+#statusbar{min-width:0;gap:8px;padding:6px 10px}
+#statusbar>*{flex:0 0 auto}
+#st-hint{flex:1 1 0;min-width:0;margin-left:auto;overflow:hidden;text-overflow:ellipsis}
+#st-wall,#st-counts{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:1400px){#st-counts{display:none}}
+
+/* ---- 1024–1200: планшетная компактность без мобильной раскладки ---- */
+@media (min-width:901px) and (max-width:1200px){
+  #st-hint{display:none}
+  .status-help{width:36px;height:36px;min-width:36px}
+}
+@media (min-width:901px) and (max-width:1100px){
+  #layout{grid-template-columns:232px minmax(0,1fr) 280px}
+  #st-counts,#st-zoom{display:none}
+  #st-wall{max-width:130px}
+  #statusbar{gap:var(--sp-3);font-size:11px;padding:4px 10px}
+  .tabs button{padding:7px 8px;font-size:11.5px}
+}
+@media (min-width:901px) and (max-width:1150px){
+  #topbar{gap:var(--sp-3);padding:7px 10px}
+  .brand{min-width:120px}
+  .project-field{flex:0 1 250px;max-width:250px}
+  .project-field>span{display:none}
+  .top-actions{flex-wrap:nowrap;gap:4px}
+  .top-actions .btn{padding:6px 8px}
+  .top-actions .btn.icon{padding:6px 9px}
+  .save-status{padding:4px 6px;font-size:11px}
+  .tool-label{display:none}
+  .tool{padding:8px 10px}
+  .wall-tab{min-height:34px}
+}
+
+/* ---- телефон: тап-таргеты 44 px, шторки, читаемость ---- */
+@media (max-width:900px){
+  .panel h2{font-size:11px}
+  .wall-tab{min-height:44px;padding:9px 12px;font-size:12px}
+  #st-help{width:44px;height:44px;min-width:44px;min-height:44px;font-size:15px;margin-left:0}
+  .table{min-width:560px}
+  .table-wrap{margin:0 -2px;padding-bottom:2px}
+  #statusbar{min-height:48px;gap:var(--sp-2);padding:2px 8px}
+  .status-help{width:44px;height:44px;min-width:44px}
+  .pal-filter{min-height:44px;padding:10px 13px;font-size:12px}
+  .group-chip{min-height:44px;padding:8px 12px}
+  .pal-group-title{min-height:44px;margin:4px 0 0;padding:8px 0 4px;gap:4px}
+  .pal-item{padding:9px 10px 9px 12px}
+  .pal-item .pname{font-size:14px}
+  .pal-item .pname small{font-size:var(--fs-sm)}
+  .wall-item .wdel{min-width:44px;min-height:44px}
+  .search-clear{width:44px;height:44px;right:0;font-size:20px;border-radius:var(--r-md)}
+  .search-wrap .search{padding-right:52px}
+  .hint-btn{min-height:44px;min-width:44px;padding:10px 14px;font-size:13px}
+  .swatch{width:44px;height:44px}
+  .swatch-custom{width:44px;height:44px}
+  .tool-colors .swatch{width:44px;height:44px}
+  .menu-colors .tool-colors .swatch{width:44px;height:44px}
+  .mini-select,.menu-labels .mini-select,.menu-toggles .mini-select{min-height:44px}
+  .channel-kind select{min-height:44px}
+  .anchor-select{min-height:44px!important}
+  #dock-edit{min-height:44px}
+  .zoom .btn{min-width:44px;min-height:44px}
+  .menu-colors{flex-wrap:wrap}
+  .sheet-head{backdrop-filter:blur(8px)}
+  .sheet-body>*{flex:0 0 auto}
+  #left,#right,.sheet-body,.tabpanel{scroll-padding-top:60px}
+  #left,#right{overscroll-behavior:contain}
+  .tabpanel{padding-bottom:calc(24px + var(--safe-bottom))}
+  .modal{padding-bottom:calc(14px + var(--safe-bottom))}
+  .modal-head{position:sticky;top:0;z-index:2;background:var(--panel);padding-top:4px}
+  .modal-actions{padding-bottom:calc(4px + var(--safe-bottom))}
+  .prop-title h4{font-size:17px}
+  .wall-caption{font-size:180px}
+  .wall-sub{font-size:95px}
+  /* легенда групп остаётся доступной на телефоне: одна компактная строка сверху */
+  #canvas-legend{
+    display:flex!important;top:8px;left:8px;right:8px;bottom:auto;max-width:none;
+    gap:6px;padding:4px 7px;font-size:10px;flex-wrap:wrap;row-gap:2px;overflow:hidden;
+  }
+  #canvas-legend[hidden]{display:none!important}
+  #canvas-legend .legend-title{font-size:9.5px}
+  #canvas-legend .legend-item{font-size:10px}
+  #topbar{padding:6px 8px;min-height:56px}
+  #mobile-bar button.active{position:relative}
+  #mobile-bar button.active::before{content:"";position:absolute;top:0;left:22%;right:22%;height:2px;border-radius:0 0 2px 2px;background:var(--accent)}
+}
+
+/* ---- телефон в альбомной ориентации: сцена важнее хрома ---- */
+@media (max-width:900px) and (max-height:500px){
+  #topbar{min-height:52px;padding:4px 6px;padding-top:calc(4px + env(safe-area-inset-top));gap:6px}
+  .brand-mark{width:30px;height:30px}
+  #mobile-menu-btn{min-width:44px;min-height:44px;padding:6px}
+  .project-field input{min-height:44px;padding:6px 8px}
+  #stage-toolbar{padding:3px 6px;gap:4px;row-gap:3px}
+  #stage-toolbar .tool{min-width:40px;min-height:40px;padding:7px}
+  #stage-toolbar .tool svg{width:19px;height:19px}
+  .zoom .btn{min-width:40px;min-height:40px}
+  .wall-tab{min-height:36px;padding:6px 10px;font-size:11.5px}
+  #canvas-hint{display:none}
+  #canvas-legend{display:none!important}
+  #statusbar{min-height:34px;padding:1px 6px;font-size:10px;gap:6px}
+  #st-check{min-height:32px;padding:2px 6px;font-size:10px}
+  #st-help{width:34px;height:34px;min-width:34px;min-height:34px;font-size:12px}
+  #layout{padding-bottom:calc(52px + env(safe-area-inset-bottom))}
+  #mobile-bar{height:calc(52px + env(safe-area-inset-bottom))}
+  #mobile-bar button{min-height:48px;padding:3px 2px;font-size:9.5px;gap:1px}
+  #mobile-bar button>svg{width:18px;height:18px}
+  #mobile-bar button>span{font-size:9.5px}
+  #left,#right{bottom:calc(52px + env(safe-area-inset-bottom));max-height:calc(100dvh - 60px)}
+  #right{height:calc(100dvh - 60px)}
+  body.sheet-menu #menu-sheet{bottom:calc(52px + env(safe-area-inset-bottom));max-height:calc(100dvh - 60px)}
+  #selection-dock:not([hidden]){bottom:calc(92px + env(safe-area-inset-bottom));min-height:40px;padding:3px 6px 3px 10px;gap:8px}
+  .dock-copy span{display:none}
+  .dock-copy b{font-size:12px}
+  #dock-edit{min-height:36px;font-size:12px;padding:5px 8px}
+  .toast{bottom:calc(112px + env(safe-area-inset-bottom))}
+  body.has-selection .toast{bottom:calc(150px + env(safe-area-inset-bottom))}
+}
