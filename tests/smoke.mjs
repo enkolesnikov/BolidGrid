@@ -111,9 +111,9 @@ async function main() {
     // --- короб ---
     await page.keyboard.press('c');
     check('клавиша C включает инструмент «канал»', (await state()).tool === 'channel');
-    await page.mouse.click(wallBox.x + wallBox.width * 0.2, wallBox.y + wallBox.height * 0.2);
-    await page.mouse.click(wallBox.x + wallBox.width * 0.65, wallBox.y + wallBox.height * 0.2);
-    await page.mouse.click(wallBox.x + wallBox.width * 0.65, wallBox.y + wallBox.height * 0.55);
+    await page.mouse.click(wallBox.x + wallBox.width * 0.15, wallBox.y + wallBox.height * 0.2);
+    await page.mouse.click(wallBox.x + wallBox.width * 0.85, wallBox.y + wallBox.height * 0.2);
+    await page.mouse.click(wallBox.x + wallBox.width * 0.85, wallBox.y + wallBox.height * 0.55);
     await page.keyboard.press('Enter');
     await sleep(250);
     const afterChannel = await state();
