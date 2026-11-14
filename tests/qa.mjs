@@ -294,9 +294,10 @@ const readSpecTables = (page) =>
         sec = child.textContent.trim();
         continue;
       }
-      if (child.tagName === 'TABLE') {
-        const head = [...child.querySelectorAll('thead th')].map((th) => th.textContent.trim());
-        const rows = [...child.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()));
+      const table = child.tagName === 'TABLE' ? child : child.classList.contains('table-wrap') ? child.querySelector('table') : null;
+      if (table) {
+        const head = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+        const rows = [...table.querySelectorAll('tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent.trim()));
         out.push({ section: sec, head, rows });
       }
     }

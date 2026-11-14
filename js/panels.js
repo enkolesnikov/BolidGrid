@@ -2,7 +2,7 @@
  * panels.js — панели интерфейса: каталог устройств, стены, точные свойства,
  * спецификация оборудования и ведомость коробов.
  */
-import { MODELS, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal, SYSTEM_LABELS, SYSTEM_ORDER, SYSTEM_COLORS } from './catalog.js';
+import { MODELS, MODEL_BY_ID, getModel, KIND_LABELS, KIND_ORDER, CHANNEL_KINDS, CHANNEL_COLORS, modelThumb, modelHaystack, terminalsForModel, TERMINAL_KIND_LABELS, TERMINAL_KIND_COLORS, CABLE_MODELS, CABLE_BY_ID, findTerminal, SYSTEM_LABELS, SYSTEM_ORDER, SYSTEM_COLORS } from './catalog.js';
 import { fmt, fmt0, m, mm, esc, download, toCSV, uid, polylineLength } from './util.js';
 
 const el = (html) => {
@@ -23,6 +23,12 @@ export class Panels {
     this.collapsedSystems = new Set();
     this.anchorX = 'left';
     this.anchorY = 'bottom';
+    // Скрытые вкладки не перерисовываются на каждый commit: помечаем dirty
+    // и рендерим при активации вкладки.
+    this._tabsDirty = { spec: true, journal: true };
+    this._paletteStructKey = null;
+    this._paletteCountsKey = null;
+    this._paletteArmed = null;
     this._bind();
     this.renderAll();
   }
@@ -67,6 +73,31 @@ export class Panels {
       });
     }
 
+    // палитра: одна делегация вместо слушателя на каждой кнопке после innerHTML.
+    this.$('palette-list')?.addEventListener('click', (e) => {
+      const group = e.target.closest('[data-pal-group]');
+      if (group) {
+        this._toggleSystem(group.dataset.palGroup);
+        return;
+      }
+      const item = e.target.closest('[data-model]');
+      if (item) this.editor.armModel(item.dataset.model);
+    });
+    this.$('palette-list')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const group = e.target.closest('[data-pal-group]');
+      if (!group) return;
+      e.preventDefault();
+      this._toggleSystem(group.dataset.palGroup);
+    });
+    this.$('palette-groups')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-sys-filter]');
+      if (!btn) return;
+      this.systemFilter = btn.dataset.sysFilter;
+      this.store.placeSystem = this.systemFilter === 'all' ? null : this.systemFilter;
+      this.renderPalette();
+    });
+
     // добавление стены
     this.$('btn-add-wall')?.addEventListener('click', () => this.openWallDialog(null));
 
@@ -109,6 +140,16 @@ export class Panels {
       this.store.setActiveWall(item.dataset.wallId);
       this.editor.fit();
     });
+    // U-08: строка стены — role="button"; Enter/Space работают как клик,
+    // но вложенная кнопка удаления сохраняет своё поведение.
+    this.$('walls-list')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const item = e.target.closest('[data-wall-id]');
+      if (!item || e.target.closest('[data-wall-del]')) return;
+      e.preventDefault();
+      this.store.setActiveWall(item.dataset.wallId);
+      this.editor.fit();
+    });
     this.$('wall-tabs')?.addEventListener('click', (e) => {
       const b = e.target.closest('[data-wall-id]');
       if (!b) return;
@@ -121,6 +162,12 @@ export class Panels {
     this.activeTab = tab;
     for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', b.dataset.tab === tab);
     for (const p of document.querySelectorAll('.tabpanel')) p.classList.toggle('active', p.id === `tab-${tab}`);
+    // Спецификация/ведомость обновляются лениво: если пока вкладка была скрыта
+    // состояние менялось, отрисуем его сейчас, до первого взгляда пользователя.
+    if (this._tabsDirty[tab]) {
+      if (tab === 'spec') this.renderSpec();
+      else if (tab === 'journal') this.renderJournal();
+    }
   }
 
   /* ================= глобальная перерисовка ================= */
@@ -143,8 +190,9 @@ export class Panels {
       case 'project':
         this.renderPalette();
         this.renderInspector();
-            this.renderSpec();
-        this.renderJournal();
+        // Скрытые вкладки лишь помечаются dirty и перерисуются при открытии.
+        this._markTab('spec');
+        this._markTab('journal');
         this.renderWalls();
         this.renderWallTabs();
         break;
@@ -163,10 +211,19 @@ export class Panels {
         this.updateToolButtons();
         break;
       case 'spec':
-        this.renderSpec();
+        this._markTab('spec');
         break;
       default:
         break;
+    }
+  }
+
+  /** Пометить вкладку dirty; активную — сразу перерисовать. */
+  _markTab(tab) {
+    this._tabsDirty[tab] = true;
+    if (this.activeTab === tab) {
+      if (tab === 'spec') this.renderSpec();
+      else if (tab === 'journal') this.renderJournal();
     }
   }
 
@@ -188,18 +245,23 @@ export class Panels {
   renderWalls() {
     const box = this.$('walls-list');
     if (!box) return;
+    const focus = this._captureFocus(box, (node) => {
+      const item = node.closest('[data-wall-id]');
+      return item ? `[data-wall-id="${item.dataset.wallId}"]` : null;
+    });
     const activeId = this.store.wall?.id;
     box.innerHTML = this.store.project.walls
       .map((w, i) => {
         const n = this.store.project.devices.filter((d) => d.wallId === w.id).length;
         const ch = this.store.project.channels.filter((c) => c.wallId === w.id).length;
-        return `<div class="wall-item ${w.id === activeId ? 'active' : ''}" data-wall-id="${w.id}" title="${escAll(w.name)}">
+        return `<div class="wall-item ${w.id === activeId ? 'active' : ''}" data-wall-id="${w.id}" role="button" tabindex="0" title="${escAll(w.name)}">
           <span class="wname">${escAll(w.name)}</span>
           <span class="wdim">${m(w.width)}×${m(w.height)} · ${n}у · ${ch}к</span>
           <button class="wdel" data-wall-del="${w.id}" title="Удалить стену">✕</button>
         </div>`;
       })
       .join('');
+    this._restoreFocus(box, focus);
   }
 
   renderWallTabs() {
@@ -212,7 +274,7 @@ export class Panels {
   }
 
   /* ================= палитра ================= */
-  renderPalette() {
+    renderPalette() {
     const box = this.$('palette-list');
     if (!box) return;
     const counts = this.store.placedCountByModel();
@@ -220,16 +282,37 @@ export class Panels {
     if (this.store.spec?.equipment) {
       for (const row of this.store.spec.equipment) specQty.set(row.pos, +row.qty || 0);
     }
-    const armed = this.store.armedModelId;
+    const armed = this.store.armedModelId || '';
     const q = this.search;
-    const matches = (model) => {
+
+    // «Структура» палитры: от неё зависит состав и порядок узлов.
+    const structKey = [q, this.systemFilter, this.store.placeSystem ?? '', [...this.collapsedSystems].sort().join(',')].join('\u0000');
+    // «Счётчики»: размещено / по спецификации по каждой видимой модели.
+    let countsKey = '';
+    for (const model of MODELS) {
+      if (model.hidden) continue;
+      countsKey += `${model.id}:${counts.get(model.id) || 0}:${model.specPos != null ? specQty.get(model.specPos) || 0 : '-'};`;
+    }
+
+    // Ничего не изменилось — не пересобираем DOM и не трогаем фокус на палитре.
+    if (box.childElementCount && structKey === this._paletteStructKey) {
+      if (this._paletteArmed !== armed) {
+        for (const btn of box.querySelectorAll('[data-model]')) btn.classList.toggle('armed', btn.dataset.model === armed);
+        this._paletteArmed = armed;
+      }
+      if (this._paletteCountsKey !== countsKey) {
+        this._updatePaletteCounts(box, counts, specQty);
+        this._paletteCountsKey = countsKey;
+      }
+      return;
+    }
+
+    const available = MODELS.filter((model) => {
       if (model.hidden) return false;
       if (this.systemFilter !== 'all' && model.system !== this.systemFilter) return false;
       if (!q) return true;
-      const hay = `${model.name} ${model.model} ${model.full} ${model.vendor}`.toLowerCase();
-      return hay.includes(q);
-    };
-    const available = MODELS.filter(matches);
+      return modelHaystack(model).includes(q);
+    });
 
     const groupsEl = this.$('palette-groups');
     if (groupsEl) {
@@ -237,15 +320,13 @@ export class Panels {
       groupsEl.innerHTML = [`<button class="pal-filter ${this.systemFilter === 'all' ? 'active' : ''}" data-sys-filter="all">Все</button>`]
         .concat(systems.map((sys) => `<button class="pal-filter ${this.systemFilter === sys ? 'active' : ''}" data-sys-filter="${sys}">${escAll(SYSTEM_LABELS[sys])}</button>`))
         .join('');
-      groupsEl.querySelectorAll('[data-sys-filter]').forEach((btn) => btn.addEventListener('click', () => {
-        this.systemFilter = btn.dataset.sysFilter;
-        this.store.placeSystem = this.systemFilter === 'all' ? null : this.systemFilter;
-        this.renderPalette();
-      }));
     }
 
     if (!available.length) {
       box.innerHTML = `<div class="empty">Ничего не найдено${q ? ` по запросу «${escAll(this.search)}»` : ''}.</div>`;
+      this._paletteStructKey = structKey;
+      this._paletteCountsKey = countsKey;
+      this._paletteArmed = armed;
       return;
     }
     let html = '';
@@ -264,34 +345,43 @@ export class Panels {
       for (const model of models) {
         const placed = counts.get(model.id) || 0;
         const qty = model.specPos != null ? specQty.get(model.specPos) : null;
-        const over = qty != null && placed > qty;
         html += `<button class="pal-item ${armed === model.id ? 'armed' : ''} ${this.systemFilter === sys ? 'sys-active' : ''}" data-model="${model.id}" style="--sys-color:${color}" title="${escAll(model.full)}">
           <span class="thumb">${modelThumb(model, 40)}</span>
           <span class="pname">${escAll(model.name)}<small>${escAll(model.vendor || '')}${model.specPos != null ? ` · поз. ${model.specPos}` : ''}</small></span>
-          <span class="pcount">${qty != null ? `<b class="${over ? 'over' : ''}">${placed}</b> / ${qty}` : placed}<small>${model.unit || 'шт.'}</small></span>
+          <span class="pcount">${this._paletteCountHtml(model, placed, qty)}</span>
         </button>`;
       }
     }
     box.innerHTML = html;
-    box.querySelectorAll('[data-model]').forEach((btn) => {
-      btn.addEventListener('click', () => this.editor.armModel(btn.dataset.model));
-    });
-    box.querySelectorAll('[data-pal-group]').forEach((title) => {
-      const toggle = () => {
-        const sys = title.dataset.palGroup;
-        if (this.collapsedSystems.has(sys)) this.collapsedSystems.delete(sys);
-        else this.collapsedSystems.add(sys);
-        this.renderPalette();
-      };
-      title.addEventListener('click', toggle);
-      title.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          toggle();
-        }
-      });
-    });
+    this._paletteStructKey = structKey;
+    this._paletteCountsKey = countsKey;
+    this._paletteArmed = armed;
   }
+
+  _paletteCountHtml(model, placed, qty) {
+    const over = qty != null && placed > qty;
+    return qty != null ? `<b class="${over ? 'over' : ''}">${placed}</b> / ${qty}<small>${model.unit || 'шт.'}</small>` : `${placed}<small>${model.unit || 'шт.'}</small>`;
+  }
+
+  /** Обновить только счётчики, сохранив кнопки и фокус. */
+  _updatePaletteCounts(box, counts, specQty) {
+    for (const btn of box.querySelectorAll('[data-model]')) {
+      const model = MODEL_BY_ID.get(btn.dataset.model);
+      const slot = btn.querySelector('.pcount');
+      if (!model || !slot) continue;
+      const placed = counts.get(model.id) || 0;
+      const qty = model.specPos != null ? specQty.get(model.specPos) : null;
+      const next = this._paletteCountHtml(model, placed, qty);
+      if (slot.innerHTML !== next) slot.innerHTML = next;
+    }
+  }
+
+  _toggleSystem(sys) {
+    if (this.collapsedSystems.has(sys)) this.collapsedSystems.delete(sys);
+    else this.collapsedSystems.add(sys);
+    this.renderPalette();
+  }
+
 
   updateToolButtons() {
     for (const b of document.querySelectorAll('#stage-toolbar [data-tool]')) {
@@ -304,21 +394,88 @@ export class Panels {
     const box = this.$('tab-props');
     if (!box) return;
     const sel = this.store.selection;
+    let html;
     if (!sel.length) {
-      box.innerHTML = this._inspectorEmpty();
-      this._wireInspector(box);
-      return;
+      html = this._inspectorEmpty();
+    } else {
+      const devices = this.store.selectedDevices();
+      const channels = this.store.selectedChannels();
+      const dims = this.store.selectedDimensions();
+      const conns = this.store.selectedConnections();
+      if (devices.length === 1 && !channels.length && !dims.length && !conns.length) html = this._deviceInspector(devices[0]);
+      else if (channels.length === 1 && !devices.length && !dims.length && !conns.length) html = this._channelInspector(channels[0]);
+      else if (dims.length === 1 && !devices.length && !channels.length && !conns.length) html = this._dimensionInspector(dims[0]);
+      else if (conns.length === 1 && !devices.length && !channels.length && !dims.length) html = this._connectionInspector(conns[0]);
+      else html = this._multiInspector(devices, channels, dims, conns);
     }
-    const devices = this.store.selectedDevices();
-    const channels = this.store.selectedChannels();
-    const dims = this.store.selectedDimensions();
-    const conns = this.store.selectedConnections();
-    if (devices.length === 1 && !channels.length && !dims.length && !conns.length) box.innerHTML = this._deviceInspector(devices[0]);
-    else if (channels.length === 1 && !devices.length && !dims.length && !conns.length) box.innerHTML = this._channelInspector(channels[0]);
-    else if (dims.length === 1 && !devices.length && !channels.length && !conns.length) box.innerHTML = this._dimensionInspector(dims[0]);
-    else if (conns.length === 1 && !devices.length && !channels.length && !dims.length) box.innerHTML = this._connectionInspector(conns[0]);
-    else box.innerHTML = this._multiInspector(devices, channels, dims, conns);
+    // Разметка не изменилась — не пересобираем DOM: сохраняются фокус, курсор
+    // и уже навешенные обработчики. undo/import заменяют объект project — тогда
+    // пересобираем всегда, чтобы замыкания не остались на старых объектах.
+    const projectChanged = this.store.project !== this._inspectorProject;
+    if (!projectChanged && box.childElementCount && html === this._inspectorHtml) return;
+    // innerHTML пересоздаёт поля: сохраняем фокус и позицию курсора, иначе
+    // ввод в инспекторе «выбивает» пользователя после каждого commit.
+    const focus = this._captureFocus(box, (node) => this._inspectorFieldKey(node));
+    box.innerHTML = html;
     this._wireInspector(box);
+    this._inspectorHtml = html;
+    this._inspectorProject = this.store.project;
+    this._restoreFocus(box, focus);
+  }
+
+  /** Устойчивый селектор поля инспектора: data-атрибуты переживают перерисовку. */
+  _inspectorFieldKey(node) {
+    const attrs = ['data-f', 'data-pos-x', 'data-pos-y', 'data-anchor-x', 'data-anchor-y', 'data-ch-point', 'data-ch-color', 'data-gap-value', 'data-gap-direction', 'data-conn-cable', 'data-height', 'data-group', 'data-align', 'data-act', 'data-spec-act', 'data-journal-act'];
+    for (const attr of attrs) {
+      if (!node.hasAttribute(attr)) continue;
+      const value = node.getAttribute(attr);
+      let key = value === '' ? `[${attr}]` : `[${attr}="${CSS.escape(value)}"]`;
+      if (attr === 'data-ch-point' && node.hasAttribute('data-axis')) key += `[data-axis="${CSS.escape(node.getAttribute('data-axis'))}"]`;
+      return key;
+    }
+    return null;
+  }
+
+  _captureFocus(container, keyOf) {
+    const active = document.activeElement;
+    if (!active || active === container || !container.contains(active)) return null;
+    const key = keyOf(active);
+    if (!key) return null;
+    let start = null;
+    let end = null;
+    const textLike =
+      active instanceof HTMLTextAreaElement ||
+      (active instanceof HTMLInputElement && !['number', 'range', 'color', 'checkbox', 'radio', 'file', 'date'].includes(active.type));
+    if (textLike) {
+      try {
+        start = active.selectionStart;
+        end = active.selectionEnd;
+      } catch {
+        // поле без текстового выделения
+      }
+    }
+    return { key, start, end, scrollTop: container.scrollTop };
+  }
+
+  _restoreFocus(container, snap) {
+    if (!snap) return;
+    const node = container.querySelector(snap.key);
+    if (!node || typeof node.focus !== 'function') return;
+    node.focus({ preventScroll: true });
+    if (snap.start != null) {
+      try {
+        node.setSelectionRange(snap.start, snap.end);
+      } catch {
+        // не текстовое поле — позиция курсора неприменима
+      }
+    }
+    // Прокрутку возвращаем в следующем кадре: запись scrollTop сразу после
+    // innerHTML вызывает принудительный layout и удорожает commit.
+    if (snap.scrollTop > 0) {
+      requestAnimationFrame(() => {
+        if (container.isConnected) container.scrollTop = snap.scrollTop;
+      });
+    }
   }
 
   _inspectorEmpty() {
@@ -368,8 +525,7 @@ export class Panels {
           <label>Обозначение<input data-f="tag" value="${escAll(d.tag)}" placeholder="1.1"></label>
           <label>Модель<select data-f="modelId">${modelOptions}</select></label>
         </div>
-        <div class="group-chips">${SYSTEM_ORDER.map((sys) => `<button class="group-chip ${((d.system || model.system) === sys) ? 'active' : ''}" data-group="${sys}" style="--c:${SYSTEM_COLORS[sys] || '#94a3b8'}" title="Группа: ${escAll(SYSTEM_LABELS[sys])}"><span class="sys-dot" style="background:${SYSTEM_COLORS[sys] || '#94a3b8'}"></span>${escAll(SYSTEM_LABELS[sys])}</button>`).join('')}</div>
-        <label>Группа приборов<select data-f="system">${SYSTEM_ORDER.map((sys) => `<option value="${sys}" ${((d.system || model.system) === sys) ? 'selected' : ''}>${escAll(SYSTEM_LABELS[sys])}</option>`).join('')}</select></label>
+        <div class="group-chips">${SYSTEM_ORDER.map((sys) => `<button class="group-chip ${((d.system || model.system) === sys) ? 'active' : ''}" data-group="${sys}" style="--c:${SYSTEM_COLORS[sys] || '#94a3b8'}" title="Группа: ${escAll(SYSTEM_LABELS[sys])}" aria-pressed="${(d.system || model.system) === sys}"><span class="sys-dot" style="background:${SYSTEM_COLORS[sys] || '#94a3b8'}"></span>${escAll(SYSTEM_LABELS[sys])}</button>`).join('')}</div>
         <div class="hintline">Группа задаёт цвет тонкой обводки прибора на листе; для новых приборов берётся из фильтра каталога.</div>
         <section class="prop-section">
           <h5>Точное положение</h5>
@@ -691,7 +847,7 @@ export class Panels {
       pos: row.pos, name: row.name, model: row.model, vendor: row.vendor, unit: row.unit || 'шт.', plan: +row.qty || 0, fact: placed.get(+row.pos) || 0, section: row.group || 'Запасные изделия и принадлежности',
     }));
 
-    const table = (list, { showFact = true, showPlan = true } = {}) => `<table class="table">
+    const table = (list, { showFact = true, showPlan = true } = {}) => `<div class="table-wrap"><table class="table">
       <thead><tr><th>Поз.</th><th>Наименование и техническая характеристика</th><th>Тип, марка</th><th>Завод</th><th>Ед.</th>${showPlan ? '<th class="num">По спец.</th>' : ''}${showFact ? '<th class="num">Факт</th>' : ''}${showFact && showPlan ? '<th class="num">Расхожд.</th>' : ''}</tr></thead>
       <tbody>${list
         .map((r) => {
@@ -710,7 +866,7 @@ export class Panels {
           </tr>`;
         })
         .join('')}</tbody>
-    </table>`;
+    </table></div>`;
 
     box.innerHTML = `<div class="prop-title"><h4>Спецификация</h4>
         <span class="badge">${spec ? 'из проекта' : 'по размещённым'}</span></div>
@@ -720,8 +876,8 @@ export class Panels {
       ${materialRows.length ? `<div class="pal-group-title">Изделия и материалы</div>${table(materialRows, { showFact: false })}` : ''}
       ${spareRows.length ? `<div class="pal-group-title">Запасные изделия</div>${table(spareRows)}` : ''}
       ${cableRows.length ? `<div class="pal-group-title">Кабельная продукция (по проложенным связям)</div>
-        <table class="table"><thead><tr><th>№</th><th>Кабель</th><th class="num">Длина, м</th></tr></thead>
-        <tbody>${cableRows.map((r) => `<tr><td class="num">${r.pos}</td><td>${escAll(r.name)}</td><td class="num"><b>${(r.lengthMm / 1000).toFixed(2)}</b></td></tr>`).join('')}</tbody></table>` : ''}
+        <div class="table-wrap"><table class="table"><thead><tr><th>№</th><th>Кабель</th><th class="num">Длина, м</th></tr></thead>
+        <tbody>${cableRows.map((r) => `<tr><td class="num">${r.pos}</td><td>${escAll(r.name)}</td><td class="num"><b>${(r.lengthMm / 1000).toFixed(2)}</b></td></tr>`).join('')}</tbody></table></div>` : ''}
       ${noCable220 ? `<div class="hintline">Связей 220 В без кабеля: ${noCable220} — они учтены в схеме, но кабель не рисуется.</div>` : ''}
       <div class="section-actions">
         <button class="btn tiny" data-spec-act="csv">Экспорт CSV</button>
@@ -731,6 +887,7 @@ export class Panels {
     box.querySelectorAll('[data-spec-act]').forEach((b) =>
       b.addEventListener('click', () => this._specExport(b.dataset.specAct, { rows, materialRows, spareRows, equipmentCount, cableRows }))
     );
+    this._tabsDirty.spec = false;
   }
 
   _specExport(act, data) {
@@ -792,7 +949,7 @@ export class Panels {
       <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.5;margin-bottom:8px">
         Длина трассы считается по ломаной линии короба с учётом реальной ширины. Итог — сколько короба нужно закупить.
       </div>
-      <table class="table">
+      <div class="table-wrap"><table class="table">
         <thead><tr><th>№</th><th>Стена / трасса</th><th class="num">Длина, м</th></tr></thead>
         <tbody>
         ${rows
@@ -808,7 +965,7 @@ export class Panels {
         <tfoot>
           <tr class="total"><td colspan="2">Итого короба</td><td class="num">${(totals.length / 1000).toFixed(2)} м</td></tr>
         </tfoot>
-      </table>
+      </table></div>
       <div class="section-actions">
         <button class="btn tiny" data-journal-act="csv">Экспорт CSV</button>
       </div>`;
@@ -830,6 +987,7 @@ export class Panels {
         this.toast('Ведомость короба выгружена');
       })
     );
+    this._tabsDirty.journal = false;
   }
 
   /* ================= модальные окна ================= */

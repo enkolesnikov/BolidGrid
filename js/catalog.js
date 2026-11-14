@@ -190,9 +190,18 @@ export function symbolMarkup(model) {
 }
 
 /** Миниатюра для палитры. */
+const THUMB_CACHE = new Map();
 export function modelThumb(model, size = 40) {
+  // SVG-символ модели статичен: строим его один раз на пару «модель + размер».
+  const key = model.id ? `${model.id}|${size}` : null;
+  if (key) {
+    const hit = THUMB_CACHE.get(key);
+    if (hit) return hit;
+  }
   const pad = Math.max(model.w, model.h) * 0.12;
-  return `<svg viewBox="${-pad} ${-pad} ${model.w + 2 * pad} ${model.h + 2 * pad}" width="${size}" height="${(size * model.h) / model.w}" preserveAspectRatio="xMidYMid meet">${symbolMarkup(model)}</svg>`;
+  const html = `<svg viewBox="${-pad} ${-pad} ${model.w + 2 * pad} ${model.h + 2 * pad}" width="${size}" height="${(size * model.h) / model.w}" preserveAspectRatio="xMidYMid meet">${symbolMarkup(model)}</svg>`;
+  if (key) THUMB_CACHE.set(key, html);
+  return html;
 }
 
 /* ---------- модели ---------- */
@@ -407,6 +416,14 @@ for (const m of MODELS) {
 }
 
 export const MODEL_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
+
+/** Предвычисленный поисковый текст модели: не собираем строку на каждый ввод. */
+const MODEL_HAYSTACK = new Map(
+  MODELS.map((m) => [m, `${m.name} ${m.model} ${m.full} ${m.vendor ?? ''}`.toLowerCase()])
+);
+export function modelHaystack(model) {
+  return MODEL_HAYSTACK.get(model) ?? `${model.name} ${model.model} ${model.full} ${model.vendor ?? ''}`.toLowerCase();
+}
 
 export function getModel(id) {
   return MODEL_BY_ID.get(id) || MODEL_BY_ID.get('custom');
