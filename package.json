@@ -1,6 +1,6 @@
 {
   "name": "bolidgrid",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "private": true,
   "type": "module",
   "description": "Браузерный редактор монтажного плана стены: приборы в реальном масштабе, точные отступы, выравнивание, ортогональные короба, размеры и спецификация",
@@ -23,6 +23,11 @@
     "test": "node tests/smoke.mjs",
     "test:mobile": "node tests/mobile.mjs",
     "test:qa": "node tests/qa.mjs",
+    "test:a11y": "node tests/a11y.mjs",
+    "test:touch": "node tests/mobile-touch.mjs",
+    "test:techdebt": "node tests/techdebt.mjs",
+    "test:perf": "node tests/perf.mjs",
+    "test:extended": "node tests/a11y.mjs && node tests/mobile-touch.mjs && node tests/techdebt.mjs && node tests/perf.mjs",
     "test:all": "npm test && node tests/qa.mjs && node tests/mobile.mjs"
   },
   "devDependencies": {
