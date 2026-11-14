@@ -12,6 +12,114 @@ const MODELS_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
 export const LS_KEY = 'bolidgrid:project:v1';
 export const SCHEMA_VERSION = 1;
 
+/* ---------- пределы и умолчания (одно место вместо магических чисел) ---------- */
+const WALL_MIN_SIZE = 500;
+const WALL_MAX_WIDTH = 60000;
+const WALL_MAX_HEIGHT = 20000;
+// Импорт остаётся совместимым со старыми проектами: файл мог содержать стену до 100 × 30 м.
+const IMPORT_MAX_WIDTH = 100000;
+const IMPORT_MAX_HEIGHT = 30000;
+const WALL_DEFAULT_WIDTH = 6000;
+const WALL_DEFAULT_HEIGHT = 2700;
+const HISTORY_LIMIT = 100;
+const MAX_WALLS = 200;
+const MAX_DEVICES = 5000;
+const MAX_CHANNELS = 2000;
+const MAX_DIMENSIONS = 5000;
+const MAX_CONNECTIONS = 5000;
+const MAX_CHANNEL_POINTS = 2000;
+const LIMITS = {
+  wallName: 120,
+  meta: { name: 200, object: 600, address: 300, contractor: 200, doc: 200 },
+  tag: 2000, // QA-контракт: длинные обозначения (400+ симв.) сохраняются
+  address: 200,
+  note: 300,
+  dimensionText: 200,
+  id: 80,
+};
+const LABEL_MODES = ['none', 'tag', 'full'];
+const DEVICE_ROTATIONS = [0, 90, 180, 270];
+const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
+
+export const DEFAULT_SETTINGS = Object.freeze({
+  grid: 50,
+  snap: true,
+  showGrid: true,
+  labels: 'none',
+  channelColor: '#94a3b8',
+  selectionDims: true,
+  smartSnap: true,
+  showLegend: true,
+});
+
+/** Строка с ограничением длины; объекты и прочий мусор отбрасываются. */
+function cleanText(value, max) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value).slice(0, max);
+  if (typeof value !== 'string') return '';
+  return value.length > max ? value.slice(0, max) : value;
+}
+
+/** Идентификатор из недоверенных данных: только строка/число, обрезка, безопасный charset. */
+function cleanId(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) value = String(value);
+  if (typeof value !== 'string') return '';
+  // id попадает в HTML/SVG-атрибуты и CSS-селекторы: кавычки, `<`, `>`,
+  // пробелы и прочие символы недопустимы (stored XSS через импорт).
+  return value.trim().slice(0, LIMITS.id).replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+/** Целая координата в миллиметрах, ограниченная [0, max]. */
+function clampCoord(value, max) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? clamp(n, 0, Math.max(0, max)) : 0;
+}
+
+/** Размер стены: целые миллиметры в допустимом диапазоне, иначе прежнее/умолчание. */
+function normalizeWallSize(value, min, max, fallback) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? clamp(n, min, max) : fallback;
+}
+
+/**
+ * Выдать уникальные id внутри коллекции. Первое вхождение сохраняет id,
+ * повторы получают новый uid (объект не теряется).
+ * Возвращает множество исходных id, которые встретились больше одного раза.
+ */
+function assignUniqueIds(items, prefix) {
+  const used = new Set();
+  const duplicated = new Set();
+  for (const item of items) {
+    let id = item.id;
+    if (!id) id = uid(prefix);
+    if (used.has(id)) {
+      duplicated.add(id);
+      do {
+        id = uid(prefix);
+      } while (used.has(id));
+    }
+    item.id = id;
+    used.add(id);
+  }
+  return duplicated;
+}
+
+/** Настройки отображения из localStorage: только известные ключи и допустимые значения. */
+export function sanitizeSettings(raw, base = DEFAULT_SETTINGS) {
+  const out = { ...base };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const key of ['snap', 'showGrid', 'selectionDims', 'smartSnap', 'showLegend']) {
+    if (typeof raw[key] === 'boolean') out[key] = raw[key];
+  }
+  if (raw.grid !== undefined) {
+    const grid = Math.round(Number(raw.grid));
+    if (Number.isFinite(grid)) out.grid = clamp(grid, 1, 1000);
+  }
+  if (LABEL_MODES.includes(raw.labels)) out.labels = raw.labels;
+  if (HEX_COLOR.test(String(raw.channelColor || ''))) out.channelColor = String(raw.channelColor);
+  if (CHANNEL_KIND_IDS.includes(raw.channelKind)) out.channelKind = raw.channelKind;
+  return out;
+}
+
 export function createProject(meta = {}) {
   return {
     version: SCHEMA_VERSION,
@@ -24,7 +132,7 @@ export function createProject(meta = {}) {
       ...meta,
     },
     walls: [
-      { id: uid('wall'), name: 'Стена 1 — пожарный пост', width: 6000, height: 2700 },
+      { id: uid('wall'), name: 'Стена 1 — пожарный пост', width: WALL_DEFAULT_WIDTH, height: WALL_DEFAULT_HEIGHT },
     ],
     devices: [],
     channels: [],
@@ -42,7 +150,7 @@ export class Store {
     this.tool = 'select';
     this.armedModelId = null;
     this.placeSystem = null;
-    this.settings = { grid: 50, snap: true, showGrid: true, labels: 'none', channelColor: '#94a3b8', selectionDims: true, smartSnap: true, showLegend: true };
+    this.settings = { ...DEFAULT_SETTINGS };
     this._undo = [];
     this._redo = [];
     this._before = null;
@@ -79,7 +187,7 @@ export class Store {
       const after = JSON.stringify(this.project);
       if (after !== this._before) {
         this._undo.push({ label, state: this._before });
-        if (this._undo.length > 100) this._undo.shift();
+        if (this._undo.length > HISTORY_LIMIT) this._undo.shift();
         this._redo.length = 0;
       }
       this._before = null;
@@ -101,10 +209,9 @@ export class Store {
   get canRedo() {
     return this._redo.length > 0;
   }
-  undo() {
-    const entry = this._undo.pop();
-    if (!entry) return false;
-    this._redo.push({ label: entry.label, state: JSON.stringify(this.project) });
+  /** Переставить снимок истории: текущее состояние уходит в обратный стек. */
+  _restore(entry, target) {
+    target.push({ label: entry.label, state: JSON.stringify(this.project) });
     this.project = JSON.parse(entry.state);
     this.ensureActiveWall();
     this.clearSelection();
@@ -112,16 +219,13 @@ export class Store {
     this.scheduleSave();
     return true;
   }
+  undo() {
+    const entry = this._undo.pop();
+    return entry ? this._restore(entry, this._redo) : false;
+  }
   redo() {
     const entry = this._redo.pop();
-    if (!entry) return false;
-    this._undo.push({ label: entry.label, state: JSON.stringify(this.project) });
-    this.project = JSON.parse(entry.state);
-    this.ensureActiveWall();
-    this.clearSelection();
-    this.emit('all');
-    this.scheduleSave();
-    return true;
+    return entry ? this._restore(entry, this._undo) : false;
   }
 
   /* ---------- стены ---------- */
@@ -151,14 +255,14 @@ export class Store {
       this.emit('wall');
     }
   }
-  addWall({ name = null, width = 6000, height = 2700 } = {}) {
+  addWall({ name = null, width = WALL_DEFAULT_WIDTH, height = WALL_DEFAULT_HEIGHT } = {}) {
     let wall;
     this.act('добавление стены', () => {
       wall = {
         id: uid('wall'),
-        name: name || `Стена ${this.project.walls.length + 1}`,
-        width,
-        height,
+        name: cleanText(name, LIMITS.wallName) || `Стена ${this.project.walls.length + 1}`,
+        width: normalizeWallSize(width, WALL_MIN_SIZE, WALL_MAX_WIDTH, WALL_DEFAULT_WIDTH),
+        height: normalizeWallSize(height, WALL_MIN_SIZE, WALL_MAX_HEIGHT, WALL_DEFAULT_HEIGHT),
       };
       this.project.walls.push(wall);
       this.activeWallId = wall.id;
@@ -167,22 +271,31 @@ export class Store {
     this.emit('wall');
     return wall;
   }
+  /** Зажать содержимое стены в её новые границы (приборы, трассы и размеры). */
+  _clampWallContent(wallId, wall) {
+    for (const d of this.project.devices.filter((d) => d.wallId === wallId)) {
+      const m = getModel(d.modelId);
+      d.x = clampCoord(d.x, wall.width - m.w);
+      d.y = clampCoord(d.y, wall.height - m.h);
+    }
+    for (const c of this.project.channels.filter((c) => c.wallId === wallId)) {
+      if (Array.isArray(c.points)) c.points = c.points.map(([x, y]) => [clampCoord(x, wall.width), clampCoord(y, wall.height)]);
+    }
+    for (const d of (this.project.dimensions || []).filter((d) => d.wallId === wallId)) {
+      if (Array.isArray(d.a)) d.a = [clampCoord(d.a[0], wall.width), clampCoord(d.a[1], wall.height)];
+      if (Array.isArray(d.b)) d.b = [clampCoord(d.b[0], wall.width), clampCoord(d.b[1], wall.height)];
+    }
+  }
   updateWall(id, patch) {
     this.act('изменение стены', () => {
       const w = this.project.walls.find((x) => x.id === id);
-      if (!w) return;
-      Object.assign(w, patch);
-      w.width = clamp(+w.width || 1000, 500, 60000);
-      w.height = clamp(+w.height || 1000, 500, 20000);
-      // устройства не должны оказаться за пределами стены
-      for (const d of this.project.devices.filter((d) => d.wallId === id)) {
-        const m = getModel(d.modelId);
-        d.x = clamp(d.x, 0, w.width - m.w);
-        d.y = clamp(d.y, 0, w.height - m.h);
-      }
-      for (const c of this.project.channels.filter((c) => c.wallId === id)) {
-        c.points = c.points.map(([x, y]) => [clamp(x, 0, w.width), clamp(y, 0, w.height)]);
-      }
+      if (!w || !patch || typeof patch !== 'object') return;
+      if (patch.name !== undefined) w.name = cleanText(patch.name, LIMITS.wallName) || w.name;
+      w.width = normalizeWallSize(patch.width ?? w.width, WALL_MIN_SIZE, WALL_MAX_WIDTH, w.width);
+      w.height = normalizeWallSize(patch.height ?? w.height, WALL_MIN_SIZE, WALL_MAX_HEIGHT, w.height);
+      w.id = id; // id стены не меняется патчем
+      // устройства, трассы и размеры не должны оказаться за пределами стены
+      this._clampWallContent(id, w);
     });
     this.emit('wall');
   }
@@ -298,11 +411,10 @@ export class Store {
     this.act('добавление устройства', () => {
       const wall = this.wall;
       dev = {
-        id: uid('dev'),
         modelId: model.id,
         wallId: wall.id,
-        x: Math.round(clamp(x, 0, wall.width - model.w)),
-        y: Math.round(clamp(y, 0, wall.height - model.h)),
+        x: 0,
+        y: 0,
         rot: 0,
         tag: this.nextTag(wall.id),
         address: '',
@@ -310,6 +422,17 @@ export class Store {
         system: patch.system || this.placeSystem || model.system || 'other',
         ...patch,
       };
+      // служебные поля и геометрия важнее переданного patch
+      dev.id = uid('dev');
+      dev.modelId = model.id;
+      dev.wallId = wall.id;
+      dev.x = clampCoord(x, wall.width - model.w);
+      dev.y = clampCoord(y, wall.height - model.h);
+      dev.rot = DEVICE_ROTATIONS.includes(+dev.rot) ? +dev.rot : 0;
+      dev.system = SYSTEM_ORDER.includes(String(dev.system)) ? String(dev.system) : (model.system || 'other');
+      dev.tag = cleanText(dev.tag, LIMITS.tag);
+      dev.address = cleanText(dev.address, LIMITS.address);
+      dev.note = cleanText(dev.note, LIMITS.note);
       this.project.devices.push(dev);
       this.selection = [{ type: 'device', id: dev.id }];
     });
@@ -319,12 +442,21 @@ export class Store {
   updateDevice(id, patch, { commit = true } = {}) {
     const doIt = () => {
       const d = this.getDevice(id);
-      if (!d) return;
+      if (!d || !patch || typeof patch !== 'object') return;
+      const prev = { id: d.id, wallId: d.wallId, modelId: d.modelId };
       Object.assign(d, patch);
+      d.id = prev.id;
+      d.wallId = prev.wallId;
+      if (!MODELS_BY_ID.has(String(d.modelId))) d.modelId = prev.modelId;
       const m = getModel(d.modelId);
       const wall = this.project.walls.find((w) => w.id === d.wallId) || this.wall;
-      d.x = clamp(+d.x || 0, 0, wall.width - m.w);
-      d.y = clamp(+d.y || 0, 0, wall.height - m.h);
+      d.x = clampCoord(d.x, wall.width - m.w);
+      d.y = clampCoord(d.y, wall.height - m.h);
+      d.rot = DEVICE_ROTATIONS.includes(+d.rot) ? +d.rot : 0;
+      d.system = SYSTEM_ORDER.includes(String(d.system)) ? String(d.system) : (m.system || 'other');
+      d.tag = cleanText(d.tag, LIMITS.tag);
+      d.address = cleanText(d.address, LIMITS.address);
+      d.note = cleanText(d.note, LIMITS.note);
     };
     if (commit) this.act('изменение устройства', doIt);
     else {
@@ -714,12 +846,14 @@ export class Store {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      if (!data?.project) return false;
-      this.replaceProject(data.project, { activeWallId: data.activeWallId });
-      if (data.settings && typeof data.settings === 'object') {
-        this.settings = { ...this.settings, ...data.settings };
-        this.settings.labels = ['none', 'tag', 'full'].includes(this.settings.labels) ? this.settings.labels : 'none';
+      if (!data || typeof data !== 'object' || !data.project || typeof data.project !== 'object') return false;
+      const schema = Number(data.schema);
+      if (Number.isFinite(schema) && schema > SCHEMA_VERSION) {
+        console.warn(`[store] сохранение схемы ${schema} новее поддерживаемой ${SCHEMA_VERSION}; загружаем известные поля`);
       }
+      // настройки — до replaceProject, чтобы первый же рендер увидел валидные значения
+      this.settings = sanitizeSettings(data.settings, this.settings);
+      this.replaceProject(data.project, { activeWallId: data.activeWallId });
       return true;
     } catch (err) {
       console.warn('[store] не удалось загрузить проект', err);
@@ -728,7 +862,8 @@ export class Store {
   }
   replaceProject(project, { activeWallId = null } = {}) {
     this.project = sanitizeProject(project);
-    this.activeWallId = activeWallId && this.project.walls.some((w) => w.id === activeWallId) ? activeWallId : this.project.walls[0].id;
+    const wanted = cleanId(activeWallId);
+    this.activeWallId = wanted && this.project.walls.some((w) => w.id === wanted) ? wanted : this.project.walls[0].id;
     this.selection = [];
     this._undo = [];
     this._redo = [];
@@ -742,7 +877,11 @@ export class Store {
 
 /** Привести ломаную короба к горизонтальным/вертикальным сегментам. */
 function orthoPoints(points) {
-  const pts = points.map((p) => [Math.round(+p[0] || 0), Math.round(+p[1] || 0)]);
+  const pts = points.slice(0, MAX_CHANNEL_POINTS).map((p) => {
+    const x = Math.round(Number(p?.[0]));
+    const y = Math.round(Number(p?.[1]));
+    return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0];
+  });
   if (!pts.length) return pts;
   const out = [pts[0]];
   for (let i = 1; i < pts.length; i++) {
@@ -756,99 +895,141 @@ function orthoPoints(points) {
   return out;
 }
 
+/** Только известные поля meta, каждый — строкой с ограничением длины. */
+function sanitizeMeta(raw, base) {
+  const meta = { ...base };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return meta;
+  for (const [key, max] of Object.entries(LIMITS.meta)) {
+    const value = raw[key];
+    if (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))) {
+      meta[key] = cleanText(value, max);
+    }
+  }
+  return meta;
+}
+
 /** Проверка/починка проекта из localStorage/файла. */
 export function sanitizeProject(raw) {
   const base = createProject();
-  if (!raw || typeof raw !== 'object') return base;
-  const walls = Array.isArray(raw.walls) && raw.walls.length
-    ? raw.walls.map((w, i) => ({
-        id: String(w.id || uid('wall')),
-        name: String(w.name || `Стена ${i + 1}`),
-        width: clamp(+w.width || 6000, 500, 100000),
-        height: clamp(+w.height || 2700, 500, 30000),
-      }))
-    : base.walls;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+
+  // --- стены: id уникальны, повторы получают новый id (объект остаётся) ---
+  let walls = (Array.isArray(raw.walls) ? raw.walls : [])
+    .slice(0, MAX_WALLS)
+    .filter((w) => w && typeof w === 'object' && !Array.isArray(w))
+    .map((w, i) => ({
+      id: cleanId(w.id),
+      name: cleanText(w.name, LIMITS.wallName) || `Стена ${i + 1}`,
+      width: normalizeWallSize(w.width, WALL_MIN_SIZE, IMPORT_MAX_WIDTH, WALL_DEFAULT_WIDTH),
+      height: normalizeWallSize(w.height, WALL_MIN_SIZE, IMPORT_MAX_HEIGHT, WALL_DEFAULT_HEIGHT),
+    }));
+  if (!walls.length) walls = base.walls;
+  assignUniqueIds(walls, 'wall');
   const wallIds = new Set(walls.map((w) => w.id));
   const wallById = new Map(walls.map((w) => [w.id, w]));
+
+  // --- приборы: только стены проекта, уникальные id, координаты в габаритах стены ---
   const devices = (Array.isArray(raw.devices) ? raw.devices : [])
-    .filter((d) => d && wallIds.has(d.wallId))
-    .filter((d) => {
-      const m = MODELS_BY_ID.get(String(d.modelId));
-      return m ? !m.hidden : true; // скрытые модели (АКБ, МПН, Маяк, таблички, КМ-О и т.п.) не переносим
-    })
+    .slice(0, MAX_DEVICES)
+    .filter((d) => d && typeof d === 'object' && !Array.isArray(d) && wallIds.has(cleanId(d.wallId)))
     .map((d) => {
-      const model = getModel(d.modelId);
-      const wall = wallById.get(d.wallId);
+      const wallId = cleanId(d.wallId);
+      const model = getModel(cleanId(d.modelId));
+      const wall = wallById.get(wallId);
       return {
-        id: String(d.id || uid('dev')),
+        id: cleanId(d.id),
         modelId: model.id,
-        wallId: d.wallId,
-        x: clamp(Math.round(+d.x || 0), 0, Math.max(0, wall.width - model.w)),
-        y: clamp(Math.round(+d.y || 0), 0, Math.max(0, wall.height - model.h)),
-        rot: [0, 90, 180, 270].includes(+d.rot) ? +d.rot : 0,
+        wallId,
+        x: clampCoord(d.x, wall.width - model.w),
+        y: clampCoord(d.y, wall.height - model.h),
+        rot: DEVICE_ROTATIONS.includes(+d.rot) ? +d.rot : 0,
         system: SYSTEM_ORDER.includes(String(d.system)) ? String(d.system) : (model.system || 'other'),
-        tag: String(d.tag ?? ''),
-        address: String(d.address ?? ''),
-        note: String(d.note ?? ''),
+        tag: cleanText(d.tag, LIMITS.tag),
+        address: cleanText(d.address, LIMITS.address),
+        note: cleanText(d.note, LIMITS.note),
       };
-    });
+    })
+    // скрытые модели (АКБ, МПН, Маяк, таблички, КМ-О и т.п.) не переносим
+    .filter((d) => !MODELS_BY_ID.get(d.modelId)?.hidden);
+  const duplicateDeviceIds = assignUniqueIds(devices, 'dev');
+
+  // --- короба: стена существует, точки ограничены стеной, id уникальны ---
   const channels = (Array.isArray(raw.channels) ? raw.channels : [])
-    .filter((c) => c && wallIds.has(c.wallId) && Array.isArray(c.points) && c.points.length >= 2)
+    .slice(0, MAX_CHANNELS)
+    .filter((c) => c && typeof c === 'object' && !Array.isArray(c)
+      && wallIds.has(cleanId(c.wallId)) && Array.isArray(c.points) && c.points.length >= 2)
     .map((c) => {
       // Старые проекты использовали id «кабель-канал»; кабельные поля больше не переносим.
       const kind = c.kind === 'кабель-канал' ? 'dkc' : c.kind;
+      const wallId = cleanId(c.wallId);
+      const wall = wallById.get(wallId);
+      const width = Math.round(Number(c.width));
       return {
-        id: String(c.id || uid('ch')),
-        wallId: c.wallId,
+        id: cleanId(c.id),
+        wallId,
         kind: CHANNEL_KIND_IDS.includes(kind) ? kind : CHANNEL_KIND_IDS[0],
-        width: clamp(+c.width || 100, 5, 600),
-        color: /^#[0-9a-fA-F]{3,8}$/.test(String(c.color || '')) ? String(c.color) : '',
-        points: orthoPoints(c.points),
+        width: Number.isFinite(width) && width > 0 ? clamp(width, 5, 600) : 100,
+        color: HEX_COLOR.test(String(c.color || '')) ? String(c.color) : '',
+        points: orthoPoints(c.points).map(([x, y]) => [clampCoord(x, wall.width), clampCoord(y, wall.height)]),
       };
-    });
+    })
+    .filter((c) => c.points.length >= 2);
+  assignUniqueIds(channels, 'ch');
+
+  // --- размеры: концы в стене, id уникальны ---
   const dimensions = (Array.isArray(raw.dimensions) ? raw.dimensions : [])
-    .filter((d) => d && wallIds.has(d.wallId) && Array.isArray(d.a) && Array.isArray(d.b))
+    .slice(0, MAX_DIMENSIONS)
+    .filter((d) => d && typeof d === 'object' && !Array.isArray(d)
+      && wallIds.has(cleanId(d.wallId)) && Array.isArray(d.a) && Array.isArray(d.b))
     .map((d) => {
-      const wall = wallById.get(d.wallId);
-      const fix = (pt) => [clamp(Math.round(+pt[0] || 0), 0, wall.width), clamp(Math.round(+pt[1] || 0), 0, wall.height)];
+      const wallId = cleanId(d.wallId);
+      const wall = wallById.get(wallId);
+      const offset = Number(d.offset);
       return {
-        id: String(d.id || uid('dim')),
-        wallId: d.wallId,
-        a: fix(d.a),
-        b: fix(d.b),
-        text: String(d.text ?? ''),
-        offset: clamp(+d.offset || 60, -600, 600),
+        id: cleanId(d.id),
+        wallId,
+        a: [clampCoord(d.a[0], wall.width), clampCoord(d.a[1], wall.height)],
+        b: [clampCoord(d.b[0], wall.width), clampCoord(d.b[1], wall.height)],
+        text: cleanText(d.text, LIMITS.dimensionText),
+        offset: Number.isFinite(offset) ? clamp(Math.round(offset), -600, 600) : 60,
       };
     });
-  // Связи по клеммам: переносим только валидные (оба прибора существуют, клеммы есть у моделей,
-  // приборы на одной стене, кабель из каталога).
+  assignUniqueIds(dimensions, 'dim');
+
+  // --- связи по клеммам: только на сохранённые приборы одной стены и с существующими клеммами ---
   const devById = new Map(devices.map((d) => [d.id, d]));
   const terminalsOf = (dev) => {
     const list = terminalsForModel(getModel(dev.modelId));
     return new Map(list.map((t) => [t.id, t]));
   };
   const connections = (Array.isArray(raw.connections) ? raw.connections : [])
+    .slice(0, MAX_CONNECTIONS)
     .map((c) => {
-      const from = c && c.from && devById.get(String(c.from.deviceId));
-      const to = c && c.to && devById.get(String(c.to.deviceId));
+      const fromId = cleanId(c?.from?.deviceId);
+      const toId = cleanId(c?.to?.deviceId);
+      // повтор id прибора делает связь неоднозначной — такую связь не переносим
+      if (duplicateDeviceIds.has(fromId) || duplicateDeviceIds.has(toId)) return null;
+      const from = devById.get(fromId);
+      const to = devById.get(toId);
       if (!from || !to || from.id === to.id || from.wallId !== to.wallId) return null;
-      const fromTerminals = terminalsOf(from);
-      const toTerminals = terminalsOf(to);
-      if (!fromTerminals.has(String(c.from.terminalId)) || !toTerminals.has(String(c.to.terminalId))) return null;
-      const cable = CABLE_BY_ID.has(String(c.cableModelId || '')) ? String(c.cableModelId) : '';
+      const terminalFrom = cleanId(c.from.terminalId);
+      const terminalTo = cleanId(c.to.terminalId);
+      if (!terminalsOf(from).has(terminalFrom) || !terminalsOf(to).has(terminalTo)) return null;
+      const cable = CABLE_BY_ID.has(cleanId(c.cableModelId)) ? cleanId(c.cableModelId) : '';
       return {
-        id: String(c.id || uid('conn')),
+        id: cleanId(c.id),
         wallId: from.wallId,
-        from: { deviceId: from.id, terminalId: String(c.from.terminalId) },
-        to: { deviceId: to.id, terminalId: String(c.to.terminalId) },
+        from: { deviceId: from.id, terminalId: terminalFrom },
+        to: { deviceId: to.id, terminalId: terminalTo },
         cableModelId: cable,
       };
     })
     .filter(Boolean);
+  assignUniqueIds(connections, 'conn');
 
   return {
     version: SCHEMA_VERSION,
-    meta: { ...base.meta, ...(raw.meta && typeof raw.meta === 'object' ? raw.meta : {}) },
+    meta: sanitizeMeta(raw.meta, base.meta),
     walls,
     devices,
     channels,

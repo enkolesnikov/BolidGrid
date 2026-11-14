@@ -69,7 +69,24 @@ export function mm(v) {
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-export const uid = (p = 'id') => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+/**
+ * Случайный суффикс идентификатора. crypto.randomUUID даёт криптостойкую
+ * случайность без коллизий в рамках проекта; Math.random остаётся fallback'ом
+ * для старых браузеров, где globalThis.crypto недоступен.
+ */
+function randomSuffix() {
+  const crypto = globalThis.crypto;
+  if (crypto && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+  }
+  if (crypto && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(5));
+    return Array.from(bytes, (b) => b.toString(36).padStart(2, '0')).join('').slice(0, 10);
+  }
+  return Math.random().toString(36).slice(2, 12);
+}
+
+export const uid = (p = 'id') => `${p}_${randomSuffix()}`;
 
 const TRANSLIT = {
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i',
