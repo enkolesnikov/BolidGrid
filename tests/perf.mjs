@@ -312,10 +312,12 @@ async function main() {
       return {
         withSel: (withSel.match(/terminal-dot/g) || []).length,
         withoutSel: (withoutSel.match(/terminal-dot/g) || []).length,
+        equal: withSel === withoutSel,
+        len: [withSel.length, withoutSel.length],
       };
     });
     check('SVG-экспорт одинаков независимо от выделения',
-      exportDeterminism.withSel === 0 && exportDeterminism.withoutSel === 0,
+      exportDeterminism.withSel === 0 && exportDeterminism.withoutSel === 0 && exportDeterminism.equal,
       JSON.stringify(exportDeterminism));
 
     /* ---------- 6. U-08: строки стен доступны с клавиатуры ---------- */

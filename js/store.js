@@ -485,6 +485,10 @@ export class Store {
         };
         const model = getModel(copy.modelId);
         const wall = this.project.walls.find((w) => w.id === copy.wallId) || this.wall;
+        // У края стены пробуем сместить копию в противоположную сторону,
+        // чтобы она не легла ровно на оригинал.
+        if (copy.x + model.w > wall.width) copy.x = d.x - 150;
+        if (copy.y < 0) copy.y = d.y + 150;
         copy.x = clampCoord(copy.x, wall.width - model.w);
         copy.y = clampCoord(copy.y, wall.height - model.h);
         this.project.devices.push(copy);

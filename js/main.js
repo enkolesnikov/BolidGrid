@@ -967,10 +967,12 @@ window.addEventListener('beforeunload', () => store.save());
 let printView = null;
 window.addEventListener('beforeprint', () => {
   printView = { ...editor.view };
+  editor._printing = true;
   editor.fit();
 });
 window.addEventListener('afterprint', () => {
   if (!printView) return;
+  editor._printing = false;
   Object.assign(editor.view, printView);
   printView = null;
   editor.render();

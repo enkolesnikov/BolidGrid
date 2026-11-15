@@ -137,6 +137,12 @@ export class WallEditor {
     if (typeof ResizeObserver === 'undefined') return;
     this._ro = new ResizeObserver(() => {
       if (!this.svg.clientWidth || !this.svg.clientHeight) return;
+      if (this._printing) {
+        // Печатный лист меняет размер SVG: сохраняем viewBox «вся стена»,
+        // иначе recenter срезает верх плана.
+        this.render();
+        return;
+      }
       if (!this._sized) {
         this._sized = true;
         this.fit();
@@ -1854,7 +1860,7 @@ export class WallEditor {
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
-    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label, .channel-hit, .channel-seg-hit, .dev-hit, .cable-hit, .terminal-hit, .terminal-dot')) g.remove();
+    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label, .channel-hit, .channel-seg-hit, .dev-hit, .cable-hit, .terminal-hit, .terminal-dot, .terminal')) g.remove();
     for (const g of walker.querySelectorAll('.sel')) g.classList.remove('sel');
     const meta = this.store.project.meta || {};
     const title = `${meta.name || 'BolidGrid'} — ${wall.name}`;

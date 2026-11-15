@@ -1058,12 +1058,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   #statusbar{min-height:48px;gap:var(--sp-2);padding:2px 8px}
   .status-help{width:44px;height:44px;min-width:44px}
   .pal-filter{min-height:44px;padding:10px 13px;font-size:12px}
-  .pal-groups{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .pal-groups{flex:0 0 auto;min-height:44px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
   .pal-groups .pal-filter{flex:0 0 auto}
   #panel-walls .walls-list{max-height:96px}
   .menu-walls .wall-item{min-height:44px}
   details summary{min-height:44px;display:flex;align-items:center}
-  .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(142px + env(safe-area-inset-bottom))}
   .group-chip{min-height:44px;padding:8px 12px}
   .pal-group-title{min-height:44px;margin:4px 0 0;padding:8px 0 4px;gap:4px}
   .pal-item{padding:9px 10px 9px 12px}
@@ -1117,9 +1117,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 /* ---- планшеты с пальцем: те же 44 px, что и на телефоне ---- */
 @media (pointer:coarse) and (min-width:901px){
-  button,.pal-filter,.pal-group-title,.wall-tab,.group-chip,.tabs button,
-  input:not([type="checkbox"]):not([type="radio"]),select{min-height:44px}
+  button,.tool,.pal-filter,.pal-group-title,.wall-tab,.group-chip,.tabs button,
+  input:not([type="checkbox"]):not([type="radio"]),select,.wdel,.quick-values .btn,.section-actions .btn,[data-align]{min-width:44px;min-height:44px!important}
   .btn.icon,.tool,.zoom .btn,#st-help,.status-help{min-width:44px}
+}
+
+/* Планшет 1024 без touch-эмуляции: те же цели, чтобы не зависеть от pointer media. */
+@media (min-width:901px) and (max-width:1100px){
+  .wdel,.pal-filter,.tool,.tabs button{min-width:44px;min-height:44px}
+  .switch{min-height:44px}
+  .mini-select,.anchor-select{min-height:44px}
 }
 
 /* ---- телефон в альбомной ориентации: сцена важнее хрома ---- */
@@ -1136,7 +1143,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   #canvas-hint{display:none}
   /* В рисующих инструментах «Готово» должно оставаться доступным и в альбоме. */
   body.tool-channel #canvas-hint,body.tool-cable #canvas-hint{
-    display:block;left:8px;right:8px;bottom:6px;max-width:none;padding:4px 8px;font-size:10px;line-height:1.35;
+    display:block;left:8px;right:auto;bottom:6px;width:min(300px,calc(100% - 16px));max-width:none;padding:4px 8px;font-size:10px;line-height:1.35;
   }
   body.tool-channel #canvas-hint .hint-btn,body.tool-cable #canvas-hint .hint-btn{min-height:44px;padding:6px 12px;font-size:12px}
   #canvas-legend{display:none!important}
