@@ -28,7 +28,7 @@
     "test:techdebt": "node tests/techdebt.mjs",
     "test:perf": "node tests/perf.mjs",
     "test:extended": "node tests/a11y.mjs && node tests/mobile-touch.mjs && node tests/techdebt.mjs && node tests/perf.mjs",
-    "test:all": "npm test && node tests/qa.mjs && node tests/mobile.mjs"
+    "test:all": "npm test && node tests/qa.mjs && node tests/mobile.mjs && node tests/a11y.mjs && node tests/mobile-touch.mjs && node tests/techdebt.mjs && node tests/perf.mjs"
   },
   "devDependencies": {
     "esbuild": "0.21.5",

@@ -341,9 +341,10 @@ async function main() {
       const chBefore = (await state()).channels;
       await page.locator('#stage-toolbar [data-tool="channel"]').tap();
       await sleep(250);
-      await tap(vp.width * 0.15, vp.height * 0.7);
+      const channelSheet = await page.locator('#wall .sheet').boundingBox();
+      await tap(channelSheet.x + channelSheet.width * 0.15, channelSheet.y + channelSheet.height * 0.5);
       await sleep(200);
-      await tap(vp.width * 0.75, vp.height * 0.7);
+      await tap(channelSheet.x + channelSheet.width * 0.75, channelSheet.y + channelSheet.height * 0.5);
       await sleep(300);
       const doneBtn = page.locator('#btn-channel-done');
       const doneVisible = await doneBtn.isVisible();

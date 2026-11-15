@@ -8,14 +8,14 @@
 
 | Прогон | Результат |
 |---|---|
-| `npm test` | **103/103 PASS** |
+| `npm test` | **104/104 PASS** |
 | `npm run test:qa` | **167/167 PASS** |
 | `npm run test:mobile` | **123/123 PASS** |
 | `node tests/a11y.mjs` | **53/53 PASS** |
 | `node tests/mobile-touch.mjs` | **94/94 PASS** |
 | `node tests/techdebt.mjs` | **24/24 PASS** |
-| `node tests/perf.mjs` | **21/21 PASS** |
-| Всего | **585/585 PASS** |
+| `node tests/perf.mjs` | **24/24 PASS** |
+| Всего | **589/589 PASS** |
 
 Во всех прогонах не зафиксированы `pageerror` и `console.error`. Наборы запускаются и через `npm run test:a11y`, `test:touch`, `test:techdebt`, `test:perf` или одной командой `npm run test:extended`.
 

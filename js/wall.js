@@ -428,10 +428,34 @@ export class WallEditor {
     this.render();
   }
   cancelAll() {
+    const d = this.drag;
     this.drag = null;
     this.band = null;
     this.pan = null;
+    this._cancelLive();
+    // Esc во время перетаскивания должен отменить правку и не оставить
+    // висящий снимок undo (_before), иначе следующее действие теряет историю.
+    if (d?.mode === 'device' && d.moving && d.origins) {
+      for (const o of d.origins) {
+        const dev = this.store.getDevice(o.id);
+        if (!dev || dev.wallId !== o.wallId) continue;
+        dev.x = o.x;
+        dev.y = o.y;
+      }
+      this.store._before = null;
+      this.store.emit('live');
+    } else if (d?.points0 && (d.mode === 'vertex' || d.mode === 'channel-seg' || d.mode === 'channel-move')) {
+      const ch = this.store.getChannel(d.channelId);
+      if (ch) ch.points = d.points0;
+      this.store._before = null;
+      this.store.emit('live');
+    } else if (d?.mode === 'dim') {
+      this.store.commit('изменение размера');
+    } else if (this.store._before) {
+      this.store._before = null;
+    }
     this.cancelDraft();
+    this.render();
   }
 
   /* ================= события указателя ================= */
@@ -1005,7 +1029,12 @@ export class WallEditor {
   }
   _channelClick(floor) {
     if (!this.channelDraft) {
-      this.channelDraft = { wallId: this.wall.id, points: [[this.snap(floor[0]), this.snap(floor[1])]], cursor: [this.snap(floor[0]), this.snap(floor[1])] };
+      // Клик вне листа не должен начинать трассу: иначе короб и его длина
+      // уходят за стену и попадают в ведомость/CSV.
+      if (floor[0] < 0 || floor[0] > this.wall.width || floor[1] < 0 || floor[1] > this.wall.height) return;
+      const x = clamp(this.snap(floor[0]), 0, this.wall.width);
+      const y = clamp(this.snap(floor[1]), 0, this.wall.height);
+      this.channelDraft = { wallId: this.wall.id, points: [[x, y]], cursor: [x, y] };
       this._hint();
       this.render();
       return;
@@ -1077,9 +1106,11 @@ export class WallEditor {
     // На узкой/низкой сцене мобильная CSS-подпись 230 px налезает на подпись объекта
     // и выходит за лист. Даём компактный вариант с явными baseline'ами.
     const compact = (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px)')?.matches) || Math.min(this.svg.clientWidth || 0, this.svg.clientHeight || 0) < 600;
+    const maxChars = compact ? 34 : 64;
+    const captionText = w.name.length > maxChars ? `${w.name.slice(0, maxChars - 1)}…` : w.name;
     const caption = compact
-      ? `<text class="wall-caption" x="0" y="-210" style="font-size:160px">${esc(w.name)}</text>`
-      : `<text class="wall-caption" x="0" y="-150">${esc(w.name)}</text>`;
+      ? `<text class="wall-caption" x="0" y="-210" style="font-size:160px" aria-label="${esc(w.name)}">${esc(captionText)}</text>`
+      : `<text class="wall-caption" x="0" y="-150" aria-label="${esc(w.name)}">${esc(captionText)}</text>`;
     return `<rect class="sheet" x="0" y="0" width="${w.width}" height="${w.height}" rx="6"/>
       <line class="ruler-line" x1="0" y1="${w.height}" x2="${w.width}" y2="${w.height}" stroke-width="3"/>
       ${caption}
@@ -1591,7 +1622,7 @@ export class WallEditor {
       const cursor = this.channelDraft.cursor;
       const preview = [...pts, cursor];
       const d = pathD(preview, (y) => this.toScreenY(y));
-      out += `<path d="${d}" fill="none" stroke="#0ea5e9" stroke-width="${Math.max(6, 3 / this.pxPerMm)}" stroke-dasharray="${Math.max(18, 8 / this.pxPerMm)} ${Math.max(12, 5 / this.pxPerMm)}" vector-effect="non-scaling-stroke"/>`;
+      out += `<path d="${d}" fill="none" stroke="#0ea5e9" stroke-width="2.5" stroke-dasharray="8 5" vector-effect="non-scaling-stroke"/>`;
       for (const p of pts) {
         out += `<circle cx="${p[0]}" cy="${this.toScreenY(p[1])}" r="${Math.max(16, 6 / this.pxPerMm)}" fill="#0ea5e9" stroke="#fff" stroke-width="${Math.max(3, 1.5 / this.pxPerMm)}"/>`;
       }
@@ -1823,7 +1854,7 @@ export class WallEditor {
     walker.setAttribute('width', String(Math.round(bbox.w / 4)));
     walker.setAttribute('height', String(Math.round(bbox.h / 4)));
     walker.removeAttribute('style');
-    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label, .channel-hit, .channel-seg-hit, .dev-hit, .cable-hit, .terminal-hit')) g.remove();
+    for (const g of walker.querySelectorAll('.band, .armed-ghost, .dim-preview, .channel-vertex, .channel-selection, .dim-handle, .sel-frame, .issue-frame, .selection-dimension, .smart-guide-line, .smart-guide-label, .channel-hit, .channel-seg-hit, .dev-hit, .cable-hit, .terminal-hit, .terminal-dot')) g.remove();
     for (const g of walker.querySelectorAll('.sel')) g.classList.remove('sel');
     const meta = this.store.project.meta || {};
     const title = `${meta.name || 'BolidGrid'} — ${wall.name}`;

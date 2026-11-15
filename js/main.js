@@ -480,7 +480,15 @@ for (const id of ['mobile-menu-btn', 'desktop-menu-btn']) {
     else openSheet('menu', e.currentTarget);
   });
 }
-$('dock-edit')?.addEventListener('click', (e) => openSheet('props', e.currentTarget));
+$('dock-edit')?.addEventListener('click', (e) => {
+  openSheet('props', e.currentTarget);
+  // «Точно» должно вести к точным координатам, а не просто открывать шторку сверху.
+  setTimeout(() => {
+    const field = document.querySelector('#tab-props [data-pos-x]');
+    field?.closest('.prop-section')?.scrollIntoView({ block: 'center' });
+    field?.focus({ preventScroll: true });
+  }, 120);
+});
 $('btn-add-device')?.addEventListener('click', () => {
   if (isMobile()) openSheet('palette', $('btn-add-device'));
   else {

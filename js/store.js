@@ -5,7 +5,7 @@
  * поэтому любые правки должны идти через begin()/commit() или act().
  */
 import { getModel, MODELS, CHANNEL_KINDS, CHANNEL_KIND_IDS, terminalsForModel, CABLE_BY_ID, defaultCableForTerminals, SYSTEM_ORDER } from './catalog.js';
-import { uid, closestOnPolyline, polylineLength, clamp } from './util.js';
+import { uid, polylineLength, clamp } from './util.js';
 
 const MODELS_BY_ID = new Map(MODELS.map((m) => [m.id, m]));
 
@@ -76,8 +76,10 @@ function clampCoord(value, max) {
 
 /** Размер стены: целые миллиметры в допустимом диапазоне, иначе прежнее/умолчание. */
 function normalizeWallSize(value, min, max, fallback) {
+  if (value == null || value === '') return fallback;
   const n = Math.round(Number(value));
-  return Number.isFinite(n) ? clamp(n, min, max) : fallback;
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return clamp(n, min, max);
 }
 
 /**
@@ -291,11 +293,15 @@ export class Store {
       const w = this.project.walls.find((x) => x.id === id);
       if (!w || !patch || typeof patch !== 'object') return;
       if (patch.name !== undefined) w.name = cleanText(patch.name, LIMITS.wallName) || w.name;
-      w.width = normalizeWallSize(patch.width ?? w.width, WALL_MIN_SIZE, WALL_MAX_WIDTH, w.width);
-      w.height = normalizeWallSize(patch.height ?? w.height, WALL_MIN_SIZE, WALL_MAX_HEIGHT, w.height);
+      const nextWidth = patch.width !== undefined ? normalizeWallSize(patch.width, WALL_MIN_SIZE, WALL_MAX_WIDTH, w.width) : w.width;
+      const nextHeight = patch.height !== undefined ? normalizeWallSize(patch.height, WALL_MIN_SIZE, WALL_MAX_HEIGHT, w.height) : w.height;
+      const sizeChanged = nextWidth !== w.width || nextHeight !== w.height;
+      w.width = nextWidth;
+      w.height = nextHeight;
       w.id = id; // id стены не меняется патчем
-      // устройства, трассы и размеры не должны оказаться за пределами стены
-      this._clampWallContent(id, w);
+      // Устройства, трассы и размеры не должны оказаться за пределами стены.
+      // Переименование большой импортированной стены не должно её ужимать.
+      if (sizeChanged) this._clampWallContent(id, w);
     });
     this.emit('wall');
   }
@@ -477,6 +483,10 @@ export class Store {
           y: d.y - 150,
           tag: this.nextTag(d.wallId),
         };
+        const model = getModel(copy.modelId);
+        const wall = this.project.walls.find((w) => w.id === copy.wallId) || this.wall;
+        copy.x = clampCoord(copy.x, wall.width - model.w);
+        copy.y = clampCoord(copy.y, wall.height - model.h);
         this.project.devices.push(copy);
         created.push(copy);
       }
@@ -666,6 +676,7 @@ export class Store {
   /* ---------- короба ---------- */
   addChannel(points, { kind = 'dkc', wallId = this.activeWallId, width = null, color = '', label = '' } = {}) {
     const def = CHANNEL_KINDS.find((k) => k.id === kind) || CHANNEL_KINDS[0];
+    const wall = this.project.walls.find((w) => w.id === wallId) || this.wall;
     let ch;
     this.act('добавление короба', () => {
       ch = {
@@ -673,7 +684,7 @@ export class Store {
         wallId,
         kind: def.id,
         width: width ?? def.width,
-        points: points.map(([x, y]) => [Math.round(x), Math.round(y)]),
+        points: points.map(([x, y]) => [clampCoord(x, wall.width), clampCoord(y, wall.height)]),
         color: color || this.settings.channelColor || '',
       };
       this.project.channels.push(ch);
@@ -686,7 +697,15 @@ export class Store {
   updateChannel(id, patch, { commit = true } = {}) {
     const doIt = () => {
       const c = this.getChannel(id);
-      if (c) Object.assign(c, patch);
+      if (!c || !patch || typeof patch !== 'object') return;
+      if (patch.points !== undefined) {
+        const wall = this.project.walls.find((w) => w.id === c.wallId) || this.wall;
+        if (!Array.isArray(patch.points) || patch.points.length < 2) return;
+        c.points = patch.points.map(([x, y]) => [clampCoord(x, wall.width), clampCoord(y, wall.height)]);
+      }
+      if (patch.width !== undefined) c.width = clamp(Math.round(Number(patch.width) || c.width), 5, 600);
+      if (patch.color !== undefined) c.color = HEX_COLOR.test(String(patch.color || '')) ? String(patch.color) : '';
+      if (patch.kind !== undefined && CHANNEL_KIND_IDS.includes(patch.kind)) c.kind = patch.kind;
     };
     if (commit) this.act('изменение канала', doIt);
     else {
@@ -773,10 +792,12 @@ export class Store {
   updateDimension(id, patch, { commit = true } = {}) {
     const doIt = () => {
       const d = this.getDimension(id);
-      if (!d) return;
-      Object.assign(d, patch);
-      if (Array.isArray(d.a)) d.a = d.a.map((v) => Math.round(+v || 0));
-      if (Array.isArray(d.b)) d.b = d.b.map((v) => Math.round(+v || 0));
+      if (!d || !patch || typeof patch !== 'object') return;
+      const wall = this.project.walls.find((w) => w.id === d.wallId) || this.wall;
+      if (patch.a !== undefined && Array.isArray(patch.a)) d.a = [clampCoord(patch.a[0], wall.width), clampCoord(patch.a[1], wall.height)];
+      if (patch.b !== undefined && Array.isArray(patch.b)) d.b = [clampCoord(patch.b[0], wall.width), clampCoord(patch.b[1], wall.height)];
+      if (patch.text !== undefined) d.text = cleanText(patch.text, LIMITS.dimensionText);
+      if (patch.offset !== undefined) d.offset = clamp(Math.round(Number(patch.offset) || 0), -600, 600);
     };
     if (commit) this.act('изменение размера', doIt);
     else {

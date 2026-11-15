@@ -1415,9 +1415,9 @@ async function main() {
     await sleep(600);
     const fresh = await getState(page);
     check('B: «Новый проект» создаёт пустой проект с одной стеной', fresh.walls === 1 && fresh.devices === 0 && fresh.channels === 0 && (fresh.dims ?? 0) === 0, JSON.stringify({ walls: fresh.walls, devices: fresh.devices, dims: fresh.dims }));
-    const wallDeleteButtons = await page.locator('#walls-list .wdel').count();
+    const wallDeleteButtons = await page.locator('#walls-list [data-wall-del]').count();
     check('B: кнопка удаления есть у единственной стены', wallDeleteButtons === 1);
-    await page.locator('#walls-list .wdel').click();
+    await page.locator('#walls-list [data-wall-del]').click();
     await page.waitForSelector('#modal:not([hidden])', { timeout: 5000 });
     await page.locator('#modal-actions button', { hasText: 'Удалить' }).click();
     await sleep(500);

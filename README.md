@@ -115,11 +115,11 @@ bash android/build-apk.sh                        # build/BolidGrid-<версия
 
 ```bash
 npx playwright install chromium
-npm run test:all        # редактор, QA-сценарии, три мобильных размера
-npm run test:extended   # доступность, жесты, импорт, производительность
+npm run test:all        # все 7 наборов: редактор, QA, мобильные, a11y, touch, импорт, perf
+npm run test:extended   # только дополнительные наборы (a11y, touch, импорт, perf)
 ```
 
-Отдельные наборы: `npm run test:a11y`, `npm run test:touch`, `npm run test:techdebt`, `npm run test:perf`. CI выполняет `test:all` и `test:extended`. Базовые наборы проверяют редактор, основной сценарий согласования и сенсорную работу на трёх мобильных размерах; дополнительные — доступность, жесты и экспорт, устойчивость импорта и скорость перерисовки. Актуальные числа и границы — в [отчёте QA](docs/QA-REPORT.md).
+Отдельные наборы: `npm run test:a11y`, `npm run test:touch`, `npm run test:techdebt`, `npm run test:perf`. CI выполняет `test:all`. Базовые наборы проверяют редактор, основной сценарий согласования и сенсорную работу на трёх мобильных размерах; дополнительные — доступность, жесты и экспорт, устойчивость импорта и скорость перерисовки. Актуальные числа и границы — в [отчёте QA](docs/QA-REPORT.md).
 
 ## Документация
 

@@ -340,6 +340,10 @@ test('импорт: стена 80000 мм переживает импорт, р�
   assert.equal(st.getDevice('d1').x, 70000, 'прибор остаётся на длинной стене');
   assert.equal(st.getDevice('d1').y, 25000);
 
+  st.updateWall('big', { name: 'Длинная (переименована)' });
+  assert.equal(st.project.walls[0].width, 80000, 'переименование не ужимает импортированную стену');
+  assert.equal(st.getDevice('d1').x, 70000, 'прибор не сдвигается при переименовании');
+
   st.updateWall('big', { width: st.project.walls[0].width, height: st.project.walls[0].height });
   assert.equal(st.project.walls[0].width, 60000, 'ручное изменение ограничено 60 м');
   assert.equal(st.project.walls[0].height, 20000, 'ручное изменение ограничено 20 м');
@@ -353,8 +357,12 @@ test('updateWall: мусор в patch не ломает стену, id и имя
   st.updateWall('w1', { width: 'abc', height: -5, name: { bad: true } });
   let wall = st.project.walls[0];
   assert.equal(wall.width, 4000, 'нечисловая ширина оставляет прежнее значение');
-  assert.equal(wall.height, 500, 'отрицательная высота зажимается минимумом');
+  assert.equal(wall.height, 2700, 'отрицательная высота оставляет прежнее значение');
   assert.equal(wall.name, 'Стена 1', 'объект вместо имени не затирает название');
+
+  st.updateWall('w1', { width: 0, height: -1 });
+  assert.equal(st.project.walls[0].width, 4000, 'нулевая ширина не превращается в 500');
+  assert.equal(st.project.walls[0].height, 2700, 'отрицательная высота не превращается в 500');
 
   st.updateWall('w1', { name: 'И'.repeat(500), id: 'hack' });
   wall = st.project.walls[0];
@@ -370,7 +378,7 @@ test('updateWall: мусор в patch не ломает стену, id и имя
 test('addWall: размеры и имя нормализуются', () => {
   const st = newStore();
   const wall = st.addWall({ name: 'A'.repeat(500), width: -10, height: Infinity });
-  assert.equal(wall.width, 500);
+  assert.equal(wall.width, 6000, 'невалидная ширина даёт умолчание');
   assert.equal(wall.height, 2700, 'нечисловая высота даёт умолчание');
   assert.equal(wall.name.length, 120);
   assert.ok(st.project.walls.some((w) => w.id === wall.id));

@@ -264,6 +264,60 @@ async function main() {
     check('позиция курсора сохраняется', focus.after?.start === focus.before.start && focus.after?.end === focus.before.end, JSON.stringify({ before: focus.before, after: focus.after }));
     check('значение поля действительно сохранено в проекте', focus.after?.committed === true);
 
+    /* ---------- 5b. выбор второго одинакового объекта ---------- */
+    const sameObjects = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      let first, second;
+      s.act('подготовка одинаковых коробов', () => {
+        first = s.addChannel([[0, 500], [2500, 500]], { width: 100 });
+        second = s.addChannel([[0, 900], [2500, 900]], { width: 100 });
+      });
+      s.selectOne('channel', second.id);
+      const input = document.querySelector('#tab-props [data-f="width"]');
+      input.value = '300';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return { first: first.width, second: second.width, selected: s.selection[0]?.id === second.id };
+    });
+    check('инспектор меняет выбранный объект, а не предыдущий с тем же HTML',
+      sameObjects.selected && sameObjects.second === 300 && sameObjects.first === 100,
+      JSON.stringify(sameObjects));
+
+    /* ---------- 5c. Esc отменяет drag и не теряет историю ---------- */
+    const cancelDrag = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ed = window.BolidGrid.editor;
+      const d = s.wallDevices[0];
+      s.selectOne('device', d.id);
+      const x0 = d.x, y0 = d.y;
+      s.begin();
+      d.x = x0 + 400;
+      d.y = y0 + 200;
+      s.emit('live');
+      ed.drag = { mode: 'device', moved: true, moving: true, origins: [{ id: d.id, wallId: d.wallId, x: x0, y: y0 }] };
+      ed.cancelAll();
+      return { x: d.x, y: d.y, x0, y0, canUndo: s.canUndo, before: s._before };
+    });
+    check('Esc во время drag отменяет перемещение и не оставляет висящий undo',
+      cancelDrag.x === cancelDrag.x0 && cancelDrag.y === cancelDrag.y0 && cancelDrag.before === null,
+      JSON.stringify(cancelDrag));
+
+    /* ---------- 5d. экспорт не зависит от выделения ---------- */
+    const exportDeterminism = await page.evaluate(() => {
+      const s = window.BolidGrid.store;
+      const ed = window.BolidGrid.editor;
+      s.selectOne('device', s.wallDevices[0].id);
+      const withSel = ed.buildExportSVG().svg;
+      s.clearSelection();
+      const withoutSel = ed.buildExportSVG().svg;
+      return {
+        withSel: (withSel.match(/terminal-dot/g) || []).length,
+        withoutSel: (withoutSel.match(/terminal-dot/g) || []).length,
+      };
+    });
+    check('SVG-экспорт одинаков независимо от выделения',
+      exportDeterminism.withSel === 0 && exportDeterminism.withoutSel === 0,
+      JSON.stringify(exportDeterminism));
+
     /* ---------- 6. U-08: строки стен доступны с клавиатуры ---------- */
     const wallA11y = await page.evaluate(() => {
       const store = window.BolidGrid.store;
@@ -294,7 +348,7 @@ async function main() {
       check('Space на строке стены переключает активную стену', afterSpace === wallA11y.ids[1], `${afterEnter} → ${afterSpace}`);
 
       // Вложенная кнопка удаления не должна активировать стену, но должна открыть подтверждение.
-      await page.locator('#walls-list .wall-item').first().locator('.wdel').click();
+      await page.locator('#walls-list .wall-item').first().locator('[data-wall-del]').click();
       await sleep(120);
       const modal = await page.evaluate(() => ({
         open: document.getElementById('modal')?.hidden === false,

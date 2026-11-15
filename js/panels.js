@@ -117,6 +117,11 @@ export class Panels {
 
     // удаление стены (делегирование)
     this.$('walls-list')?.addEventListener('click', (e) => {
+      const edit = e.target.closest('[data-wall-edit]');
+      if (edit) {
+        this.openWallDialog(edit.dataset.wallEdit);
+        return;
+      }
       const del = e.target.closest('[data-wall-del]');
       if (!del) return;
       const id = del.dataset.wallDel;
@@ -136,7 +141,7 @@ export class Panels {
     // смена стены
     this.$('walls-list')?.addEventListener('click', (e) => {
       const item = e.target.closest('[data-wall-id]');
-      if (!item || e.target.closest('[data-wall-del]')) return;
+      if (!item || e.target.closest('[data-wall-del]') || e.target.closest('[data-wall-edit]')) return;
       this.store.setActiveWall(item.dataset.wallId);
       this.editor.fit();
     });
@@ -145,7 +150,7 @@ export class Panels {
     this.$('walls-list')?.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       const item = e.target.closest('[data-wall-id]');
-      if (!item || e.target.closest('[data-wall-del]')) return;
+      if (!item || e.target.closest('[data-wall-del]') || e.target.closest('[data-wall-edit]')) return;
       e.preventDefault();
       this.store.setActiveWall(item.dataset.wallId);
       this.editor.fit();
@@ -232,7 +237,10 @@ export class Panels {
     const meta = this.store.project.meta;
     const set = (id, v) => {
       const inp = this.$(id);
-      if (inp) inp.value = v ?? '';
+      if (inp) {
+        inp.value = v ?? '';
+        inp.title = v ?? '';
+      }
     };
     set('meta-name', meta.name);
     set('meta-address', meta.address);
@@ -257,7 +265,10 @@ export class Panels {
         return `<div class="wall-item ${w.id === activeId ? 'active' : ''}" data-wall-id="${w.id}" role="button" tabindex="0" title="${escAll(w.name)}">
           <span class="wname">${escAll(w.name)}</span>
           <span class="wdim">${m(w.width)}×${m(w.height)} · ${n}у · ${ch}к</span>
-          <button class="wdel" data-wall-del="${w.id}" title="Удалить стену">✕</button>
+          <span class="wactions">
+            <button class="wdel" data-wall-edit="${w.id}" title="Изменить стену" aria-label="Изменить стену «${escAll(w.name)}»">✎</button>
+            <button class="wdel" data-wall-del="${w.id}" title="Удалить стену" aria-label="Удалить стену «${escAll(w.name)}»">✕</button>
+          </span>
         </div>`;
       })
       .join('');
@@ -412,7 +423,8 @@ export class Panels {
     // и уже навешенные обработчики. undo/import заменяют объект project — тогда
     // пересобираем всегда, чтобы замыкания не остались на старых объектах.
     const projectChanged = this.store.project !== this._inspectorProject;
-    if (!projectChanged && box.childElementCount && html === this._inspectorHtml) return;
+    const selectionKey = sel.map((s) => `${s.type}:${s.id}`).join('|');
+    if (!projectChanged && selectionKey === this._inspectorSelectionKey && box.childElementCount && html === this._inspectorHtml) return;
     // innerHTML пересоздаёт поля: сохраняем фокус и позицию курсора, иначе
     // ввод в инспекторе «выбивает» пользователя после каждого commit.
     const focus = this._captureFocus(box, (node) => this._inspectorFieldKey(node));
@@ -420,6 +432,7 @@ export class Panels {
     this._wireInspector(box);
     this._inspectorHtml = html;
     this._inspectorProject = this.store.project;
+    this._inspectorSelectionKey = selectionKey;
     this._restoreFocus(box, focus);
   }
 
@@ -870,7 +883,7 @@ export class Panels {
 
     box.innerHTML = `<div class="prop-title"><h4>Спецификация</h4>
         <span class="badge">${spec ? 'из проекта' : 'по размещённым'}</span></div>
-      ${spec ? `<div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.5;margin-bottom:8px">Источник: ${escAll(spec.meta?.docCode || '')} · ${escAll(spec.metaInfo?.source || '')}. «Факт» — количество, размещённое на стенах.</div>` : ''}
+      ${spec ? `<div class="hintline" style="color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:8px">Источник: ${escAll(spec.meta?.docCode || '')} · ${escAll(spec.metaInfo?.source || '')}. «Факт» — количество, размещённое на стенах.</div>` : ''}
       <div class="pal-group-title">Оборудование</div>
       ${table(rows)}
       ${materialRows.length ? `<div class="pal-group-title">Изделия и материалы</div>${table(materialRows, { showFact: false })}` : ''}
@@ -945,8 +958,8 @@ export class Panels {
     if (!box) return;
     const { rows, totals } = this.buildJournalRows();
     const st = this.store;
-    box.innerHTML = `<div class="prop-title"><h4>Длина короба</h4><span class="badge">${rows.length} трасс</span></div>
-      <div class="hintline" style="color:#6f86a8;font-size:11.5px;line-height:1.5;margin-bottom:8px">
+    box.innerHTML = `<div class="prop-title"><h4>Длина короба</h4><span class="badge">${rows.length} ${rows.length === 1 ? 'трасса' : rows.length < 5 ? 'трассы' : 'трасс'}</span></div>
+      <div class="hintline" style="color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:8px">
         Длина трассы считается по ломаной линии короба с учётом реальной ширины. Итог — сколько короба нужно закупить.
       </div>
       <div class="table-wrap"><table class="table">
@@ -1091,7 +1104,7 @@ export class Panels {
     const st = this.store;
     const wall = wallId ? st.project.walls.find((w) => w.id === wallId) : null;
     const body = `<div class="form">
-      <label>Название стены<input id="dlg-wall-name" value="${escAll(wall?.name || `Стена ${st.project.walls.length + 1}`)}"></label>
+      <label>Название стены<input id="dlg-wall-name" maxlength="120" value="${escAll(wall?.name || `Стена ${st.project.walls.length + 1}`)}"></label>
       <div class="row2">
         <label>Длина стены, м<input id="dlg-wall-w" type="number" step="0.1" min="0.5" value="${(wall?.width ?? 6000) / 1000}"></label>
         <label>Высота стены, м<input id="dlg-wall-h" type="number" step="0.1" min="0.5" value="${(wall?.height ?? 2700) / 1000}"></label>
@@ -1107,8 +1120,12 @@ export class Panels {
           const width = Math.round((parseFloat(document.getElementById('dlg-wall-w').value) || 6) * 1000);
           const height = Math.round((parseFloat(document.getElementById('dlg-wall-h').value) || 2.7) * 1000);
           close();
-          if (wall) st.updateWall(wall.id, { name, width, height });
-          else st.addWall({ name, width, height });
+          if (wall) {
+            const patch = { name };
+            if (width !== wall.width) patch.width = width;
+            if (height !== wall.height) patch.height = height;
+            st.updateWall(wall.id, patch);
+          } else st.addWall({ name, width, height });
           this.editor.fit();
         },
       },

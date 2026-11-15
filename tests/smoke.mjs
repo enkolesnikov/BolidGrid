@@ -111,6 +111,13 @@ async function main() {
     // --- короб ---
     await page.keyboard.press('c');
     check('клавиша C включает инструмент «канал»', (await state()).tool === 'channel');
+    const sheetBox = await page.locator('#wall .sheet').boundingBox();
+    await page.mouse.click(sheetBox.x - 8, sheetBox.y - 8);
+    const outside = await page.evaluate(() => ({
+      channels: window.BolidGrid.store.project.channels.length,
+      draft: !!window.BolidGrid.editor.channelDraft,
+    }));
+    check('клик вне листа не начинает трассу короба', outside.channels === s0.channels && !outside.draft, JSON.stringify(outside));
     await page.mouse.click(wallBox.x + wallBox.width * 0.15, wallBox.y + wallBox.height * 0.2);
     await page.mouse.click(wallBox.x + wallBox.width * 0.85, wallBox.y + wallBox.height * 0.2);
     await page.mouse.click(wallBox.x + wallBox.width * 0.85, wallBox.y + wallBox.height * 0.55);
